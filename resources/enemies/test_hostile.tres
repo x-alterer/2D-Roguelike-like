@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="EnemyData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/enemy_data.gd" id="1_schema"]
+
+[resource]
+script = ExtResource("1_schema")
+enemy_name = "Hulking Shadow"
+color = Color(0.72, 0.22, 0.28, 1)
+encounter_flavor = &"combat"
+trigger_type = &"proximity"
+verb_set = Array[StringName]([&"Fight", &"Talk", &"Flee", &"UseItem"])
+hp = 6
+atk = 4
+def_stat = 2
+flee_difficulty = 0.4
+talk_receptivity = false
+dialogue_lines = Array[String](["It only growls."])
+yield_corruption_value = 0
+resist_difficulty = 0.0
+redirect_difficulty = 0.0
+redirect_options = Array[String]([])

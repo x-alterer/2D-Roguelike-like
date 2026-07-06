@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="EnemyData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/enemy_data.gd" id="1_schema"]
+
+[resource]
+script = ExtResource("1_schema")
+enemy_name = "Pale Beckoner"
+color = Color(0.85, 0.86, 0.95, 1)
+encounter_flavor = &"intimate"
+trigger_type = &"player_initiated"
+verb_set = Array[StringName]([&"Resist", &"Yield", &"Redirect", &"Flee"])
+hp = 8
+atk = 0
+def_stat = 2
+flee_difficulty = 0.3
+talk_receptivity = false
+dialogue_lines = Array[String]([])
+yield_corruption_value = 10
+resist_difficulty = 0.5
+redirect_difficulty = 0.6
+redirect_options = Array[String](["Offer a memory instead"])

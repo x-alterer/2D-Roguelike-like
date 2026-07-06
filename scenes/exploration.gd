@@ -55,7 +55,12 @@ const TILE_FLOOR := Vector2i(0, 0)
 const TILE_WALL := Vector2i(1, 0)
 const TILE_EXIT := Vector2i(2, 0)
 
+const ENEMY_SCENE := preload("res://actors/enemy.tscn")
+const HOSTILE_DATA := preload("res://resources/enemies/test_hostile.tres")
+const BECKONER_DATA := preload("res://resources/enemies/test_beckoner.tres")
+
 @onready var _floor: TileMapLayer = $Floor
+@onready var _actors: Node2D = $Actors
 @onready var _player: PlayerActor = $Actors/Player
 @onready var _status_label: Label = $StatusLabel
 
@@ -65,10 +70,15 @@ var _exit_cell := Vector2i.ZERO
 var _hostile_spawns: Array[Vector2i] = []
 var _beckoner_spawns: Array[Vector2i] = []
 
+## Every living enemy on the grid, in spawn order (which is also their turn
+## order within a tick).
+var _enemies: Array[EnemyActor] = []
+
 
 func _ready() -> void:
 	_build_floor()
 	_spawn_player()
+	_spawn_enemies()
 	_refresh_status()
 
 
@@ -103,6 +113,25 @@ func _spawn_player() -> void:
 		# spawn cell to us (technical plan, Decision 16).
 		GameState.grid_position = _entrance_cell
 	_player.place_at(GameState.grid_position)
+
+
+## Instantiates one EnemyActor per map marker. Phase 2 limitation: enemies
+## respawn fresh every time this scene loads, including after an encounter —
+## persisting the roster across mode switches is Phase 4 (task 4.2).
+func _spawn_enemies() -> void:
+	for cell in _hostile_spawns:
+		_spawn_enemy(HOSTILE_DATA, cell)
+	for cell in _beckoner_spawns:
+		_spawn_enemy(BECKONER_DATA, cell)
+
+
+func _spawn_enemy(data: EnemyData, cell: Vector2i) -> void:
+	var enemy: EnemyActor = ENEMY_SCENE.instantiate()
+	# Data must be set before add_child so the actor's _ready sees it.
+	enemy.data = data
+	_actors.add_child(enemy)
+	enemy.place_at(cell)
+	_enemies.append(enemy)
 
 
 func _unhandled_input(event: InputEvent) -> void:
