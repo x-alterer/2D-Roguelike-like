@@ -25,6 +25,11 @@ const START_ATK := 5
 const START_DEF := 2
 const CORRUPTION_MAX := 100
 
+## Sentinel meaning "not spawned yet". The floor's entrance tile is map
+## data, so GameState can't know it — Exploration replaces this with the
+## map's entrance cell on first load (technical plan, Decision 16).
+const NO_POSITION := Vector2i(-1, -1)
+
 var max_hp: int = START_MAX_HP
 var hp: int = START_MAX_HP
 var corruption: int = 0
@@ -66,9 +71,9 @@ func reset_run() -> void:
 	def_stat = START_DEF
 	inventory.clear()
 	run_log.clear()
-	# Placeholder spawn near the screen center. Phase 2's hand-made floor
-	# replaces this with its entrance tile.
-	grid_position = Vector2i(20, 11)
+	# "Nowhere yet" — Exploration snaps the player to the floor's entrance
+	# tile when it sees this sentinel.
+	grid_position = NO_POSITION
 	# randi() (unseeded, OS entropy) picks the run's seed; everything after
 	# this line must roll through `rng` so the run is reproducible.
 	rng_seed = randi()

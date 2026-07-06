@@ -1,25 +1,22 @@
-## Exploration — Mode 1, Phase 1 placeholder.
+## Exploration — Mode 1: the grid the athlete walks.
 ##
-## What this is: a stand-in for the grid exploration mode. It shows the
-## athlete as a rectangle at her GameState grid position and lets the debug
-## keys exercise the mode switch. There is no floor, no walls, no turn
-## scheduler yet — Phase 2 replaces the movement below with the real MOVE
-## loop (TileMap walkability, world tick, enemies).
+## What this is: the exploration scene. It builds the hand-made floor from
+## an ASCII map, owns the player actor, and validates every move attempt —
+## a keypress becomes a committed step, a bump, or (from task 2.6 on) an
+## encounter trigger, and this script is the single place that decides
+## which. The turn scheduler and trigger dispatcher (tasks 2.4/2.6) also
+## live here, per the plan: "the scheduler lives in Exploration, not in
+## GameState".
 ##
-## Why it exists: Phase 1's Definition of Done requires proving that position
-## survives a mode switch and that HP set in one mode is readable in the
-## other. This scene is the exploration half of that proof.
+## Why movement rules are here and not on the player: rules need the whole
+## board — walkability, occupancy, trigger types. The actors only know how
+## to be somewhere; this scene knows what being there means.
 ##
-## How it connects: emits Events.encounter_triggered when E is pressed; Main
-## hears it and swaps in the Encounter scene (this scene is freed). Reads and
-## writes only GameState — never the Encounter scene directly.
+## How it connects: reads/writes GameState.grid_position so position
+## survives mode switches. Emits Events.encounter_triggered (debug key E
+## until the real dispatcher lands); Main responds by swapping in the
+## Encounter scene, which frees this one.
 extends Node2D
-
-const TILE_SIZE := 16
-## Placeholder playable area: the 640x360 viewport in whole 16px tiles.
-## Phase 2's TileMap replaces these bounds with real walkability checks.
-const GRID_COLS := 40
-const GRID_ROWS := 22
 
 ## The hand-made test floor (technical plan, Decision 13). One character per
 ## 16px tile, 40 columns x 22 rows: '#' wall, '.' floor, '@' entrance,
@@ -59,7 +56,7 @@ const TILE_WALL := Vector2i(1, 0)
 const TILE_EXIT := Vector2i(2, 0)
 
 @onready var _floor: TileMapLayer = $Floor
-@onready var _player: ColorRect = $Player
+@onready var _player: PlayerActor = $Actors/Player
 @onready var _status_label: Label = $StatusLabel
 
 ## Filled by _build_floor from the map's marker characters.
@@ -71,13 +68,14 @@ var _beckoner_spawns: Array[Vector2i] = []
 
 func _ready() -> void:
 	_build_floor()
-	_refresh()
+	_spawn_player()
+	_refresh_status()
 
 
 ## Turns the ASCII map into TileMapLayer cells and records the marker
 ## positions. Walkability is NOT stored here — it lives on the tileset's
-## "walkable" custom data layer, so tile identity and its rules stay in one
-## place (plan task 2.1).
+## "walkable" custom data layer, so a tile's identity and its rules stay in
+## one place (plan task 2.1).
 func _build_floor() -> void:
 	for y in FLOOR_MAP.size():
 		var row := FLOOR_MAP[y]
@@ -99,10 +97,17 @@ func _build_floor() -> void:
 					_beckoner_spawns.append(cell)
 
 
+func _spawn_player() -> void:
+	if GameState.grid_position == GameState.NO_POSITION:
+		# Fresh run: the entrance tile is map data, so GameState left the
+		# spawn cell to us (technical plan, Decision 16).
+		GameState.grid_position = _entrance_cell
+	_player.place_at(GameState.grid_position)
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("debug_encounter"):
-		# null enemy data + "debug" trigger: enemies and real trigger types
-		# arrive in Phase 2. Main only needs the signal to switch modes.
+		# Phase 1 leftover; removed in Phase 4 when real triggers take over.
 		Events.encounter_triggered.emit(null, &"debug")
 		get_viewport().set_input_as_handled()
 		return
@@ -118,23 +123,28 @@ func _unhandled_input(event: InputEvent) -> void:
 		step = Vector2i.RIGHT
 	if step == Vector2i.ZERO:
 		return
-
-	# Placeholder movement (technical plan, Decision 4): whole-tile steps,
-	# clamped to the screen, written straight to GameState so the position
-	# demonstrably survives the mode switch. No walls, no world tick.
-	var target := GameState.grid_position + step
-	target.x = clampi(target.x, 0, GRID_COLS - 1)
-	target.y = clampi(target.y, 0, GRID_ROWS - 1)
-	GameState.grid_position = target
-	_refresh()
 	get_viewport().set_input_as_handled()
+	_try_player_move(step)
 
 
-## Redraws everything this scene derives from GameState: the player rect's
-## pixel position (grid cell x 16 — logical position is the truth, pixels
-## are presentation) and the status readout.
-func _refresh() -> void:
-	_player.position = Vector2(GameState.grid_position * TILE_SIZE)
+## The move rule from design-lockdown.md §2: walkable and unoccupied → step;
+## otherwise bump, and a rejected move consumes no turn.
+func _try_player_move(step: Vector2i) -> void:
+	var target := _player.grid_pos + step
+	if not _is_walkable(target):
+		_player.bump(step)
+		return
+	_player.step_to(target)
+	GameState.grid_position = target
+
+
+func _is_walkable(cell: Vector2i) -> bool:
+	var tile := _floor.get_cell_tile_data(cell)
+	# Cells outside the painted map have no tile at all — treat as solid.
+	return tile != null and bool(tile.get_custom_data("walkable"))
+
+
+func _refresh_status() -> void:
 	_status_label.text = "HP %d/%d   Corruption %d/%d" % [
 		GameState.hp, GameState.max_hp,
 		GameState.corruption, GameState.CORRUPTION_MAX,
