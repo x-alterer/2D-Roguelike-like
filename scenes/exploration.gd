@@ -21,12 +21,82 @@ const TILE_SIZE := 16
 const GRID_COLS := 40
 const GRID_ROWS := 22
 
+## The hand-made test floor (technical plan, Decision 13). One character per
+## 16px tile, 40 columns x 22 rows: '#' wall, '.' floor, '@' entrance,
+## 'X' exit, 'H' hostile spawn, 'B' beckoner spawn (all four markers sit on
+## floor tiles). Layout: entrance room left, corridor to a center room (the
+## hostile's patrol ground), corridor to the exit room right, and a dead-end
+## alcove below the entrance room where the beckoner waits — off the path,
+## so approaching it is always a deliberate choice.
+const FLOOR_MAP: Array[String] = [
+	"########################################",
+	"#..........#############################",
+	"#..........#############################",
+	"#..........#######..........############",
+	"#..........#######..........############",
+	"#..@........................####.......#",
+	"#..........#######..........####.......#",
+	"#..........#######.....H....####.......#",
+	"#..........#######.....................#",
+	"#..........#######..........####....X..#",
+	"#####.############..........####.......#",
+	"#####.############..........####.......#",
+	"#####.############..........####.......#",
+	"#####.##########################.......#",
+	"###.....########################.......#",
+	"###.....################################",
+	"###..B..################################",
+	"###.....################################",
+	"########################################",
+	"########################################",
+	"########################################",
+	"########################################",
+]
+
+const TILE_SOURCE := 0
+const TILE_FLOOR := Vector2i(0, 0)
+const TILE_WALL := Vector2i(1, 0)
+const TILE_EXIT := Vector2i(2, 0)
+
+@onready var _floor: TileMapLayer = $Floor
 @onready var _player: ColorRect = $Player
 @onready var _status_label: Label = $StatusLabel
 
+## Filled by _build_floor from the map's marker characters.
+var _entrance_cell := Vector2i.ZERO
+var _exit_cell := Vector2i.ZERO
+var _hostile_spawns: Array[Vector2i] = []
+var _beckoner_spawns: Array[Vector2i] = []
+
 
 func _ready() -> void:
+	_build_floor()
 	_refresh()
+
+
+## Turns the ASCII map into TileMapLayer cells and records the marker
+## positions. Walkability is NOT stored here — it lives on the tileset's
+## "walkable" custom data layer, so tile identity and its rules stay in one
+## place (plan task 2.1).
+func _build_floor() -> void:
+	for y in FLOOR_MAP.size():
+		var row := FLOOR_MAP[y]
+		for x in row.length():
+			var cell := Vector2i(x, y)
+			var ch := row[x]
+			if ch == "#":
+				_floor.set_cell(cell, TILE_SOURCE, TILE_WALL)
+				continue
+			_floor.set_cell(cell, TILE_SOURCE, TILE_EXIT if ch == "X" else TILE_FLOOR)
+			match ch:
+				"@":
+					_entrance_cell = cell
+				"X":
+					_exit_cell = cell
+				"H":
+					_hostile_spawns.append(cell)
+				"B":
+					_beckoner_spawns.append(cell)
 
 
 func _unhandled_input(event: InputEvent) -> void:
