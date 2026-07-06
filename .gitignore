@@ -1,0 +1,3 @@
+# Godot's per-machine import cache and editor metadata. Regenerated on open;
+# committing it causes merge noise and leaks local editor state.
+.godot/
