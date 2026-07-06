@@ -111,6 +111,29 @@ design; these are implementation-level only.)
     heal item" on Yield. The only item type in Phases 1–4 is the heal item
     (+8 HP, lockdown §3), so `boon_on_yield` for the test intimate enemy is
     one heal item added to inventory.
+13. **The floor is authored as an ASCII map constant, not editor-painted
+    tile data.** The plan says "hand-author in the TileMap editor", but the
+    editor stores painted cells as a binary blob (`tile_map_data`) that
+    can't be hand-written or code-reviewed. An ASCII map in `exploration.gd`
+    is still a hand-made floor — versionable, readable, edited by typing —
+    and it builds the same `TileMapLayer` cells at load, so walkability
+    still comes from the tileset's custom data layer as the plan requires.
+    Spawn markers live in the same map (`@` entrance, `X` exit, `H` hostile,
+    `B` beckoner) so the whole floor is one block of text. A third walkable
+    tile type gives the exit a visible color.
+14. **Two additions to the EnemyData schema:** `redirect_difficulty: float`
+    (design-lockdown §4's Redirect roll needs it; the plan's schema lists
+    `redirect_options` but omitted the difficulty value) and `color: Color`
+    (placeholder-art stand-in for `sprite` until textures exist — Phase 2
+    task 5 requires the beckoner to be visually distinct).
+15. **"Spots the player" defined.** The plan asks for a spot flash but not a
+    range: a proximity-type enemy flashes once per run when its Manhattan
+    distance to the player first drops to 5 or less.
+16. **Unspawned-position sentinel.** GameState can't know the floor's
+    entrance tile (that's map data), so `reset_run()` sets `grid_position`
+    to `NO_POSITION` (-1,-1) and Exploration snaps the player to the map's
+    `@` cell when it sees the sentinel. Returning from an encounter keeps
+    the real position, so mid-run reloads don't teleport the player.
 
 ---
 
