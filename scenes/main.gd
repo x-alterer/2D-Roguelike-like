@@ -54,7 +54,11 @@ func _switch_to(scene: PackedScene) -> void:
 	add_child(_active_mode)
 
 
-func _on_encounter_triggered(enemy_data: Resource, _trigger_type: StringName) -> void:
+func _on_encounter_triggered(enemy_data: Resource, trigger_type: StringName) -> void:
+	# Console proof of the Phase 2 DoD: which enemy fired, via which trigger
+	# type. Phase 4 threads this data into the encounter scene itself.
+	if enemy_data is EnemyData:
+		print("Main: encounter with '%s' (trigger: %s)" % [enemy_data.enemy_name, trigger_type])
 	enter_encounter(enemy_data)
 
 
