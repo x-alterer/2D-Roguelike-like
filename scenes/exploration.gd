@@ -90,8 +90,14 @@ var _immunity_ticks := 0
 
 func _ready() -> void:
 	_build_floor()
+	if not GameState.roster_initialized:
+		_seed_roster()
 	_spawn_player()
 	_spawn_enemies()
+	# Collect the one-shot immunity grant from a fled/resisted encounter
+	# (lockdown §3). The counter itself stays scene-local bookkeeping.
+	_immunity_ticks = GameState.pending_immunity_ticks
+	GameState.pending_immunity_ticks = 0
 	_update_feedback()
 	_refresh_status()
 
@@ -129,32 +135,34 @@ func _spawn_player() -> void:
 	_player.place_at(GameState.grid_position)
 
 
-## Instantiates one EnemyActor per map marker. Phase 2 limitation: enemies
-## respawn fresh every time this scene loads, including after an encounter —
-## persisting the roster across mode switches is Phase 4 (task 4.2).
-func _spawn_enemies() -> void:
+## Builds the run's enemy roster from the map markers — once per run. From
+## here on GameState.enemy_roster is the truth about who's left and where;
+## this scene only renders it (task 4.2).
+func _seed_roster() -> void:
+	GameState.enemy_roster.clear()
 	for cell in _hostile_spawns:
-		_spawn_enemy(HOSTILE_DATA, cell)
+		GameState.enemy_roster.append({"data": HOSTILE_DATA, "cell": cell})
 	for cell in _beckoner_spawns:
-		_spawn_enemy(BECKONER_DATA, cell)
+		GameState.enemy_roster.append({"data": BECKONER_DATA, "cell": cell})
+	GameState.roster_initialized = true
 
 
-func _spawn_enemy(data: EnemyData, cell: Vector2i) -> void:
-	var enemy: EnemyActor = ENEMY_SCENE.instantiate()
-	# Data must be set before add_child so the actor's _ready sees it.
-	enemy.data = data
-	_actors.add_child(enemy)
-	enemy.place_at(cell)
-	_enemies.append(enemy)
+## Instantiates one EnemyActor per roster entry. A defeated enemy is simply
+## no longer in the roster, so it doesn't come back after an encounter.
+## _enemies keeps roster order — _fire_encounter relies on the indices
+## matching.
+func _spawn_enemies() -> void:
+	for entry in GameState.enemy_roster:
+		var enemy: EnemyActor = ENEMY_SCENE.instantiate()
+		# Data must be set before add_child so the actor's _ready sees it.
+		enemy.data = entry["data"]
+		_actors.add_child(enemy)
+		enemy.place_at(entry["cell"])
+		_enemies.append(enemy)
 
 
 func _unhandled_input(event: InputEvent) -> void:
 	if _is_ticking or _encounter_fired:
-		return
-	if event.is_action_pressed("debug_encounter"):
-		# Phase 1 leftover; removed in Phase 4 when real triggers take over.
-		Events.encounter_triggered.emit(null, &"debug")
-		get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed("wait"):
 		# Wait: skip the action, the world still ticks (lockdown §2).
@@ -262,6 +270,12 @@ func _check_triggers() -> void:
 ## checks before continuing.
 func _fire_encounter(enemy: EnemyActor) -> void:
 	_encounter_fired = true
+	# Persist live positions so the grid restores exactly as it stood
+	# (_enemies keeps roster order, so indices line up), and record who's
+	# engaged so Main can apply the outcome to the right entry.
+	for i in _enemies.size():
+		GameState.enemy_roster[i]["cell"] = _enemies[i].grid_pos
+	GameState.engaged_enemy_index = _enemies.find(enemy)
 	Events.encounter_triggered.emit(enemy.data, enemy.data.trigger_type)
 
 

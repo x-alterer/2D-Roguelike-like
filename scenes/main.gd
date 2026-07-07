@@ -1,25 +1,48 @@
 ## Main — the persistent root scene. Owns mode switching; never unloaded.
 ##
-## What this is: an almost-empty node that lives for the whole program. Its
-## one job is deciding which mode scene (Exploration or Encounter) is loaded
-## as its child at any moment.
+## What this is: the node that lives for the whole program and decides which
+## mode scene (Exploration or Encounter) is loaded as its child. Since
+## Phase 4 it also applies encounter outcomes to the world: a defeated or
+## resolved enemy leaves the roster before exploration reloads, and a
+## fled-from one stays, with one tick of encounter immunity armed so the
+## return can't chain straight back into the same trigger.
 ##
-## Why it exists: the two modes must never load or reference each other —
-## that coupling is what the architecture forbids. Something above both has
-## to do the swapping, and that something is this scene.
+## Why outcome-handling is here: the encounter scene doesn't know the grid
+## exists, and the exploration scene is dead while the encounter runs.
+## Something above both has to translate "outcome: victory" into "that
+## roster entry is gone" — and Main is the only thing above both.
 ##
 ## How it connects: listens to every signal on the Events bus. Exploration
-## emitting encounter_triggered makes Main swap in the Encounter scene;
-## Encounter emitting encounter_resolved swaps Exploration back in. State
-## survives the swap only because it lives in the GameState autoload, not in
-## the scenes being freed.
+## emitting encounter_triggered makes Main build an Encounter (injecting the
+## enemy's data via setup()); Encounter emitting encounter_resolved makes
+## Main apply the outcome and swap Exploration back in. Both swaps run
+## through a 0.3s fade. State survives only in the GameState autoload.
 extends Node
 
 const EXPLORATION_SCENE := preload("res://scenes/exploration.tscn")
 const ENCOUNTER_SCENE := preload("res://scenes/encounter.tscn")
 
+## Outcomes after which the engaged enemy leaves the grid: it died, was
+## talked or redirected down, or was yielded to (chosen or forced) — in
+## every case the encounter is spent (plan task 4.2). The boon itself was
+## already granted inside the encounter.
+const REMOVE_OUTCOMES: Array[StringName] = [
+	&"victory", &"talked_down", &"redirected", &"yielded", &"yielded_forced",
+]
+## Outcomes that leave the enemy in place and grant the lockdown §3
+## one-tick encounter immunity on return.
+const IMMUNITY_OUTCOMES: Array[StringName] = [&"fled", &"resisted"]
+
+## Half the transition: fade to black, swap, fade back — 0.3s total.
+const FADE_TIME := 0.15
+
 ## The currently loaded mode scene (Exploration or Encounter instance).
 var _active_mode: Node = null
+## True while a fade+swap is in flight; bus signals arriving mid-swap are
+## dropped rather than starting a second, overlapping transition.
+var _switching := false
+
+@onready var _fade_rect: ColorRect = $FadeLayer/FadeRect
 
 
 func _ready() -> void:
@@ -27,42 +50,64 @@ func _ready() -> void:
 	Events.encounter_resolved.connect(_on_encounter_resolved)
 	Events.player_died.connect(_on_player_died)
 	Events.run_ended.connect(_on_run_ended)
-	_switch_to(EXPLORATION_SCENE)
+	# Boot straight into exploration; the fade rect starts opaque so the
+	# first thing the player sees is a fade-in.
+	_swap_to(EXPLORATION_SCENE.instantiate())
 
 
-## Swaps the encounter screen in. `_enemy_data` is unused in Phase 1 (the
-## debug path passes null); Phase 4 threads the real EnemyData resource
-## through to the encounter scene here.
-func enter_encounter(_enemy_data: Resource) -> void:
-	_switch_to(ENCOUNTER_SCENE)
+## Builds the encounter around the triggering enemy's data. setup() must
+## run before add_child so the scene's _ready sees real data instead of
+## falling back to a test enemy.
+func enter_encounter(enemy_data: EnemyData, trigger_type: StringName) -> void:
+	var encounter := ENCOUNTER_SCENE.instantiate()
+	encounter.setup(enemy_data, trigger_type)
+	_swap_to(encounter)
 
 
-## Swaps exploration back in. `_result` is the encounter's outcome payload;
-## Phase 4 applies it (remove defeated enemy, grant boon, arm flee immunity)
-## before reloading exploration.
 func exit_encounter(_result: Dictionary) -> void:
-	_switch_to(EXPLORATION_SCENE)
+	_swap_to(EXPLORATION_SCENE.instantiate())
 
 
-func _switch_to(scene: PackedScene) -> void:
+func _swap_to(instance: Node) -> void:
+	_switching = true
+	await _fade_to(1.0)
 	if _active_mode != null:
-		# queue_free, not free(): this runs inside a signal emitted by the
-		# very scene being removed, and freeing a node while it is still
-		# mid-emission is a crash. queue_free waits until the frame ends.
+		# queue_free, not free(): this often runs inside a signal emitted
+		# by the very scene being removed, and freeing a node mid-emission
+		# is a crash. queue_free waits until the frame ends.
 		_active_mode.queue_free()
-	_active_mode = scene.instantiate()
-	add_child(_active_mode)
+	_active_mode = instance
+	add_child(instance)
+	await _fade_to(0.0)
+	_switching = false
+
+
+func _fade_to(alpha: float) -> void:
+	var tween := create_tween()
+	tween.tween_property(_fade_rect, "color:a", alpha, FADE_TIME)
+	await tween.finished
 
 
 func _on_encounter_triggered(enemy_data: Resource, trigger_type: StringName) -> void:
-	# Console proof of the Phase 2 DoD: which enemy fired, via which trigger
-	# type. Phase 4 threads this data into the encounter scene itself.
+	if _switching:
+		return
 	if enemy_data is EnemyData:
 		print("Main: encounter with '%s' (trigger: %s)" % [enemy_data.enemy_name, trigger_type])
-	enter_encounter(enemy_data)
+	enter_encounter(enemy_data as EnemyData, trigger_type)
 
 
+## Applies the outcome to the world, then returns to the grid (task 4.2).
 func _on_encounter_resolved(result: Dictionary) -> void:
+	if _switching:
+		return
+	var outcome: StringName = result.get("outcome", &"")
+	var engaged: int = GameState.engaged_enemy_index
+	GameState.engaged_enemy_index = -1
+	if outcome in REMOVE_OUTCOMES:
+		if engaged >= 0 and engaged < GameState.enemy_roster.size():
+			GameState.enemy_roster.remove_at(engaged)
+	elif outcome in IMMUNITY_OUTCOMES:
+		GameState.pending_immunity_ticks = 1
 	exit_encounter(result)
 
 
