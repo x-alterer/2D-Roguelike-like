@@ -36,7 +36,8 @@ var corruption: int = 0
 var atk: int = START_ATK
 var def_stat: int = START_DEF
 
-## Item container. Phases 3-4 put heal items here; empty at run start.
+## The athlete's items: an array of ItemData resources. Empty at run start;
+## encounters grant into it (Yield boons) and consume from it (UseItem).
 var inventory: Array = []
 
 ## The athlete's logical grid cell. This is the truth about where she is —
