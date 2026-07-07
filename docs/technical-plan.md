@@ -504,6 +504,41 @@ enemy loaded when none was injected.
 
 ---
 
+## State audit (Phase 4, task 4.4)
+
+The definitive list of what crosses a mode switch. Anything not listed
+under "carries across" must not survive one — if it turns out to matter
+after a switch, it gets promoted into GameState deliberately, not smuggled.
+
+**Carries across (lives in GameState):**
+
+- `hp`, `max_hp`, `atk`, `def_stat` — the athlete's body
+- `corruption` — the run's moral ledger
+- `inventory` — ItemData resources (granted by Yield boons, consumed by
+  UseItem)
+- `grid_position` — where the athlete stands (`NO_POSITION` until first
+  spawn)
+- `enemy_roster` + `roster_initialized` — who remains on the grid and
+  where; seeded from the map once per run, edited only by Main on outcomes
+- `engaged_enemy_index` — transfer field: set by Exploration at trigger
+  time, consumed and reset by Main at resolution time
+- `pending_immunity_ticks` — transfer field: armed by Main on fled/resisted,
+  drained into Exploration's local counter on its next load
+- `rng` + `rng_seed` — the run's one random stream
+- `run_log` — reserved; Phase 6 fills it
+
+**Must NOT carry across (scene-local, rebuilt or discarded):**
+
+- Encounter: `_stage`, `_dialogue_index`, `_verbs_chosen`, `_turns_elapsed`,
+  `_corruption_delta`, `_menu_index`, `_enemy_hp` — walking away and coming
+  back starts the encounter over by design
+- Exploration: `_immunity_ticks` (armed via the transfer field, then
+  tick-local), `_is_ticking`, `_encounter_fired`, spawn-marker arrays, the
+  actor instances and their tweens
+- Main: `_switching`, the fade rect's alpha
+
+---
+
 ## Out-of-scope guard (things these phases must NOT do)
 
 From the plan's Explicitly Out of Scope list, the entries these four phases
