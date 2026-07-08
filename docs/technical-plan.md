@@ -658,8 +658,11 @@ All of it defined in data a second character could reuse.
 28. **Run-log appending arrives with Phase 5.** The plan schedules it for
     Phase 6, but Phase 5's run-end record consumes "the full verb history
     from the run log", so Main appends the plan-schema encounter record at
-    resolution time now. An encounter that ends in player death is not yet
-    logged (no encounter_resolved fires); Phase 6 owns that refinement.
+    resolution time now. The encounter that ends the run is not yet logged
+    — player death emits no encounter_resolved, and a corruption max
+    writes the run record the instant the threshold is crossed, before the
+    encounter can resolve. Phase 6 owns that refinement (log the in-flight
+    encounter at run end).
 29. **RunHistory format:** `user://run_history.tres`, a RunHistory resource
     holding an array of per-run dictionaries {character, cause, corruption,
     rng_seed, run_log}. Aggregates (verb frequencies, curves) are Phase 6.

@@ -98,7 +98,12 @@ func _ready() -> void:
 		&"Resist": _verb_resist,
 		&"Yield": _verb_yield,
 		&"Redirect": _verb_redirect,
+		&"Intimidate": _verb_intimidate,
+		&"Overwhelm": _verb_overwhelm,
 	}
+	# Corruption can cross a band mid-encounter; the menu must mutate the
+	# moment it happens, not on the next encounter (plan task 5.2).
+	Events.corruption_band_crossed.connect(_on_band_crossed)
 
 	_enemy_hp = data.hp
 	_enemy_rect.color = data.color
@@ -121,6 +126,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		_standalone_test_index = (_standalone_test_index + 1) % TEST_ENEMIES.size()
 		GameState.reset_run()
 		get_tree().reload_current_scene()
+		return
+	if _standalone and event.is_action_pressed("debug_corrupt"):
+		# Test lever for the corruption arc (Decision 30): current content
+		# can't reach the bands until Phase 9's content pass.
+		_apply_corruption(10)
+		get_viewport().set_input_as_handled()
 		return
 	if _done:
 		return
@@ -154,16 +165,35 @@ func _update_menu() -> void:
 	for i in data.verb_set.size():
 		var label: Label = _menu.get_child(i)
 		var selected := i == _menu_index
-		label.text = ("> " if selected else "  ") + String(data.verb_set[i])
+		# Corruption substitutes verbs in place — same slot, darker meaning
+		# (Phase 5). The data file still lists the original name; the
+		# current band decides what actually renders and resolves.
+		label.text = ("> " if selected else "  ") + String(_effective_verb(data.verb_set[i]))
 		# Dimming the unselected rows is the whole highlight system.
 		label.modulate = Color.WHITE if selected else Color(1, 1, 1, 0.55)
+
+
+## What a listed verb currently IS, after the corruption track's overrides
+## (Talk may be Intimidate now). Rendering and dispatch both go through
+## this, so the player always gets exactly what the menu says.
+func _effective_verb(verb: StringName) -> StringName:
+	return GameState.corruption_verb_overrides().get(verb, verb)
+
+
+func _on_band_crossed(_band: int, crossing_text: String) -> void:
+	if not crossing_text.is_empty():
+		_narrate_append(crossing_text)
+	# Re-render in place: a slot's verb may just have mutated. (The
+	# first-mutation flash that makes this unmissable is Phase 7's task.)
+	_update_menu()
+	_refresh_status()
 
 
 ## Generic dispatch (plan task 3.5): look the verb up, call it. A verb in a
 ## data file with no function here is a content error, reported loudly
 ## instead of crashing (task 3.3's test).
 func _confirm_verb() -> void:
-	var verb: StringName = data.verb_set[_menu_index]
+	var verb: StringName = _effective_verb(data.verb_set[_menu_index])
 	if not _verb_handlers.has(verb):
 		push_error("No resolution function for verb '%s' — add it to _verb_handlers." % verb)
 		_narrate("Nothing happens. ('%s' has no resolution function.)" % verb)
@@ -313,6 +343,35 @@ func _advance_stage() -> void:
 		_end_encounter(&"yielded_forced")
 
 
+# --- Corruption-mutated verbs (Phase 5): same slots, darker meanings ---
+
+
+## Talk's band-2 mutation (the athlete's track). Always works — receptivity
+## is irrelevant to a threat — and no corruption changes hands in either
+## direction ("no corruption refund", plan task 5.2). The enemy flees the
+## grid for good.
+func _verb_intimidate() -> void:
+	_take_turn(&"Intimidate")
+	_narrate("%s breaks and runs from what you have become." % data.enemy_name)
+	_end_encounter(&"intimidated")
+
+
+## Resist's band-3 mutation: end the intimate encounter by force. No boon,
+## and the body pays 2 HP (Decision 25) — if that is all she has left, loss
+## condition 1 applies. Power purchased with self, every time.
+func _verb_overwhelm() -> void:
+	_take_turn(&"Overwhelm")
+	GameState.hp = maxi(GameState.hp - 2, 0)
+	_narrate("You end it by force. It costs you a piece of yourself. HP -2.")
+	_refresh_status()
+	if GameState.hp <= 0:
+		_done = true
+		_narrate_append("You fall.")
+		Events.player_died.emit()
+		return
+	_end_encounter(&"overwhelmed")
+
+
 # --- Shared machinery ---
 
 
@@ -348,20 +407,16 @@ func _roll_succeeds(difficulty: float) -> bool:
 ## The corruption hook (plan task 3.8). Every corruption change in an
 ## encounter flows through here so the status panel updates at the moment
 ## of choice — the moral system only works if the price is visible when
-## it's paid.
+## it's paid. The band engine (stat trades, verb mutations, loss condition
+## 2) lives in GameState.add_corruption; crossings come back to this scene
+## through the corruption_band_crossed signal.
 func _apply_corruption(amount: int) -> void:
 	if amount == 0:
 		return
-	var was_below_max := GameState.corruption < GameState.CORRUPTION_MAX
-	GameState.corruption = mini(GameState.corruption + amount, GameState.CORRUPTION_MAX)
 	_corruption_delta += amount
 	_narrate_append("Corruption +%d." % amount)
+	GameState.add_corruption(amount)
 	_refresh_status()
-	if was_below_max and GameState.corruption >= GameState.CORRUPTION_MAX:
-		# Loss condition 2 (lockdown §6), emitted once at the crossing.
-		# Bands and the Bad End screen are Phase 5/6; for now the signal is
-		# the whole event.
-		Events.run_ended.emit(&"corruption")
 
 
 ## Every exit path funnels through here with its outcome enum, emitting the
@@ -390,8 +445,10 @@ func _narrate_append(text: String) -> void:
 
 
 func _refresh_status() -> void:
-	var text := "HP %d/%d\nCorruption %d/%d" % [
-		GameState.hp, GameState.max_hp,
+	# ATK/DEF are stated because corruption trades them (plan task 5.2:
+	# "numbers stated on the status panel").
+	var text := "HP %d/%d   ATK %d  DEF %d\nCorruption %d/%d" % [
+		GameState.hp, GameState.max_hp, GameState.atk, GameState.def_stat,
 		GameState.corruption, GameState.CORRUPTION_MAX,
 	]
 	if data.encounter_flavor == &"intimate":
