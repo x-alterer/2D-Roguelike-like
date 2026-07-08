@@ -674,6 +674,86 @@ All of it defined in data a second character could reuse.
 
 ---
 
+## Phase 6 — Run Structure & Meta-Layer Stub
+
+**Goal:** the game has a beginning, an end, and a next time. Title → run →
+end screen → title, seeded runs, per-run behavioral profile, history that
+survives restarts. Knowledge is the only meta-progression.
+
+### Task 6.1 — Title and end screens as mode scenes
+
+- **Files:** `scenes/title.tscn/.gd`, `scenes/end_screen.tscn/.gd`,
+  `scenes/main.gd`, `scenes/main.tscn`, `autoloads/events.gd`.
+- Title and end screens join Exploration/Encounter as swappable mode
+  scenes under Main; Phase 5's end overlay + tree pause is removed (it was
+  Decision 27's stopgap). Boot lands on the title. Two bus signals join
+  the contract: `new_run_requested` (title confirm) and `title_requested`
+  (end-screen confirm) — the screens stay bus-only like every other scene.
+- Main's `_swap_to` serializes (queues behind an in-flight fade) so
+  run_ended arriving near a swap can never interleave two transitions.
+- **Test:** boot → title → Enter starts a run → dying/ending returns
+  through the end screen → Enter → title → Enter starts a fresh run.
+
+### Task 6.2 — Win condition and full reset
+
+- **Files:** `scenes/exploration.gd`, `autoloads/game_state.gd`.
+- Stepping onto the exit tile ends the run with cause "win" (lockdown §6
+  finally wired). New run = `GameState.reset_run()` — everything resets
+  except the RunHistory file on disk.
+- **Test:** walk to the green tile; the end screen says she made it out;
+  three consecutive runs need no relaunch.
+
+### Task 6.3 — Run logging closes its gap; aggregates on record
+
+- **Files:** `scenes/encounter.gd`, `scenes/main.gd`,
+  `autoloads/game_state.gd`.
+- The encounter logs its own record on *every* exit — including the two
+  Phase 5 couldn't: player death (outcome "death") and mid-encounter
+  corruption max (outcome "corruption_end") — guarded so no encounter logs
+  twice. Main's resolution-time logging is removed.
+- Recording to disk defers from `end_run()` to the end screen's `_ready`,
+  which closes the ordering hole (the run record used to be written before
+  the fatal encounter could append itself). The record gains the plan's
+  aggregates: encounter count, verb frequency counts, corruption curve.
+- **Test:** die mid-encounter; the saved record's run_log includes that
+  encounter with its verbs_chosen.
+
+### Task 6.4 — The behavioral mirror
+
+- **Files:** `scenes/end_screen.gd`.
+- The end screen shows: cause (corruption max gets the track's Bad End
+  text on an armor-red field — the distinctness requirement survives the
+  overlay's removal), the seed, this run's profile ("Encounters: 3.
+  Fight: 4. Yield: 1.") in neutral, descriptive language (plan risk 7),
+  and the history block: runs played, causes tally, best result. The
+  title screen shows runs-played so the meta-layer is visible from boot.
+- **Test = Phase 6 DoD:** *"Can play three consecutive runs without
+  restarting the program. History persists across program restarts. Each
+  run's behavioral profile is visible on the end screen."*
+
+### Phase 6 decisions
+
+31. **Screens are mode scenes, not overlays.** Phase 5's overlay + paused
+    tree is replaced by real title/end scenes in Main's swap slot; pausing
+    is gone entirely. Distinct-Bad-End presentation moves into the end
+    screen (armor-red tint + bad_end_text headline).
+32. **Deferred disk write.** `end_run()` only marks the run over (storing
+    `run_end_cause`) and emits; the single `record_run_end()` disk write
+    happens in the end screen's `_ready`, by which point the fatal
+    encounter has appended its own record. `run_recorded` guards
+    double-writes.
+33. **Aggregate formats.** `verb_counts` is a name→count dictionary;
+    `corruption_curve` is the per-encounter corruption_delta array in
+    encounter order; "best result" = the win with the lowest corruption.
+    History shows tallies and best, not every past profile — a 640×360
+    screen can't hold them all; full profiles stay in the .tres records.
+34. **Scene-freeze flag renamed.** Exploration's `_encounter_fired` became
+    `_scene_frozen` — the win path freezes the scene the same way a
+    trigger does, and the name should say what it means, not its first
+    use case.
+
+---
+
 ## State audit (Phase 4, task 4.4)
 
 The definitive list of what crosses a mode switch. Anything not listed
