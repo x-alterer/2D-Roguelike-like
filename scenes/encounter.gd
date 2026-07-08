@@ -71,11 +71,23 @@ var _done := false
 var _logged := false
 var _standalone := false
 
+## Phase 7 presentation state — none of it is rules. The corruption number
+## the panel SHOWS ticks toward the real value instead of snapping; menu
+## slots mid-mutation-announcement render "old → new"; the band
+## interstitial gates input while it holds.
+var _shown_corruption := 0
+var _announcing: Dictionary = {}
+var _interstitial_active := false
+var _crawl_tween: Tween
+var _corruption_tween: Tween
+
 @onready var _enemy_rect: ColorRect = $EnemyRect
 @onready var _enemy_label: Label = $EnemyLabel
 @onready var _narration: Label = $NarrationLabel
 @onready var _status_label: Label = $StatusLabel
 @onready var _menu: VBoxContainer = $VerbMenu
+@onready var _band_overlay: ColorRect = $BandOverlay
+@onready var _band_label: Label = $BandOverlay/BandLabel
 
 
 ## Called by Main before this scene enters the tree (Phase 4 wires it).
@@ -111,7 +123,11 @@ func _ready() -> void:
 
 	_enemy_hp = data.hp
 	_enemy_rect.color = data.color
+	Sfx.play(&"encounter")
+	# The displayed corruption starts truthful; only gains animate.
+	_shown_corruption = GameState.corruption
 	_build_menu()
+	_check_mutation_announcements()
 	_refresh_status()
 
 	# Opening framing (lockdown §7, Decision 17). This is the emotional
@@ -125,6 +141,10 @@ func _ready() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if _interstitial_active:
+		# The band-crossing beat holds the whole screen for ~a second;
+		# nothing may resolve underneath it.
+		return
 	if _standalone and event.is_action_pressed("debug_encounter"):
 		# Cycle to the next test enemy and restart clean (Decision 21).
 		_standalone_test_index = (_standalone_test_index + 1) % TEST_ENEMIES.size()
@@ -172,9 +192,42 @@ func _update_menu() -> void:
 		# Corruption substitutes verbs in place — same slot, darker meaning
 		# (Phase 5). The data file still lists the original name; the
 		# current band decides what actually renders and resolves.
-		label.text = ("> " if selected else "  ") + String(_effective_verb(data.verb_set[i]))
-		# Dimming the unselected rows is the whole highlight system.
-		label.modulate = Color.WHITE if selected else Color(1, 1, 1, 0.55)
+		var original: StringName = data.verb_set[i]
+		var shown := String(_effective_verb(original))
+		if _announcing.has(i):
+			# First render of a mutation this run: show the transformation
+			# itself, hot, until the announcement timer settles it.
+			shown = "%s → %s" % [original, shown]
+			label.modulate = Color(1.9, 1.5, 1.1)
+		else:
+			# Dimming the unselected rows is the whole highlight system.
+			label.modulate = Color.WHITE if selected else Color(1, 1, 1, 0.55)
+		label.text = ("> " if selected else "  ") + shown
+
+
+## The mutation announcement (plan task 7.3 / risk 6): the player must
+## notice "Talk" became "Intimidate" when they're about to use it, not
+## find out from the resolution. Fires once per verb per run, at the first
+## menu that renders the mutated slot.
+func _check_mutation_announcements() -> void:
+	for i in data.verb_set.size():
+		var original: StringName = data.verb_set[i]
+		if _effective_verb(original) == original:
+			continue
+		if GameState.announced_mutations.has(original):
+			continue
+		GameState.announced_mutations.append(original)
+		_announce_mutation(i)
+
+
+func _announce_mutation(index: int) -> void:
+	_announcing[index] = true
+	_update_menu()
+	var tween := create_tween()
+	tween.tween_interval(1.4)
+	tween.tween_callback(func() -> void:
+		_announcing.erase(index)
+		_update_menu())
 
 
 ## What a listed verb currently IS, after the corruption track's overrides
@@ -187,10 +240,27 @@ func _effective_verb(verb: StringName) -> StringName:
 func _on_band_crossed(_band: int, crossing_text: String) -> void:
 	if not crossing_text.is_empty():
 		_narrate_append(crossing_text)
-	# Re-render in place: a slot's verb may just have mutated. (The
-	# first-mutation flash that makes this unmissable is Phase 7's task.)
+	# Re-render in place: a slot's verb may just have mutated.
 	_update_menu()
+	_check_mutation_announcements()
 	_refresh_status()
+	_show_interstitial(crossing_text)
+
+
+## The band-crossing beat (plan task 7.4): a tinted full-screen hold with
+## the track's line, then a quick fade. Long enough to mark the moment,
+## short enough not to break flow. Input is gated while it's up.
+func _show_interstitial(text: String) -> void:
+	_interstitial_active = true
+	_band_label.text = text
+	_band_overlay.modulate = Color.WHITE
+	_band_overlay.visible = true
+	var tween := create_tween()
+	tween.tween_interval(0.8)
+	tween.tween_property(_band_overlay, "modulate:a", 0.0, 0.3)
+	tween.tween_callback(func() -> void:
+		_band_overlay.visible = false
+		_interstitial_active = false)
 
 
 ## Generic dispatch (plan task 3.5): look the verb up, call it. A verb in a
@@ -202,6 +272,7 @@ func _confirm_verb() -> void:
 		push_error("No resolution function for verb '%s' — add it to _verb_handlers." % verb)
 		_narrate("Nothing happens. ('%s' has no resolution function.)" % verb)
 		return
+	Sfx.play(&"confirm")
 	_verb_handlers[verb].call()
 	if not _done:
 		_update_menu()
@@ -221,6 +292,7 @@ func _verb_fight() -> void:
 	_take_turn(&"Fight")
 	var dmg := maxi(GameState.atk - data.def_stat, 1)
 	_enemy_hp = maxi(_enemy_hp - dmg, 0)
+	_shake()
 	_narrate("You strike %s for %d." % [data.enemy_name, dmg])
 	# Corruption trigger 1 (lockdown §5): choosing violence against someone
 	# who would have talked. Applied before the victory check so the price
@@ -366,6 +438,7 @@ func _verb_intimidate() -> void:
 func _verb_overwhelm() -> void:
 	_take_turn(&"Overwhelm")
 	GameState.hp = maxi(GameState.hp - 2, 0)
+	_shake()
 	_narrate("You end it by force. It costs you a piece of yourself. HP -2.")
 	_refresh_status()
 	if GameState.hp <= 0:
@@ -392,6 +465,7 @@ func _enemy_acts() -> void:
 		return
 	var dmg := maxi(data.atk - GameState.def_stat, 1)
 	GameState.hp = maxi(GameState.hp - dmg, 0)
+	_shake()
 	_narrate_append("%s hits you for %d." % [data.enemy_name, dmg])
 	_refresh_status()
 	if GameState.hp <= 0:
@@ -422,7 +496,7 @@ func _apply_corruption(amount: int) -> void:
 	_corruption_delta += amount
 	_narrate_append("Corruption +%d." % amount)
 	GameState.add_corruption(amount)
-	_refresh_status()
+	_tick_corruption_display()
 	if GameState.run_over and not _done:
 		# Corruption maxed mid-verb (loss condition 2). The run is already
 		# ending — freeze this encounter and log it as it stood.
@@ -465,23 +539,73 @@ func _log_record(outcome: StringName) -> void:
 	})
 
 
+## Screen shake on damage (plan task 7.1): a few frames of jitter on the
+## scene root, then home. Plain randf — presentation never draws from the
+## seeded run RNG.
+func _shake() -> void:
+	var tween := create_tween()
+	for i in 4:
+		tween.tween_property(self, "position",
+				Vector2(randf_range(-3.0, 3.0), randf_range(-3.0, 3.0)), 0.03)
+	tween.tween_property(self, "position", Vector2.ZERO, 0.03)
+
+
+## The corruption number the panel shows counts up to the real value over
+## ~0.4s (plan task 7.1) — the tick IS the moment of consequence.
+func _tick_corruption_display() -> void:
+	if _corruption_tween != null and _corruption_tween.is_valid():
+		_corruption_tween.kill()
+	_corruption_tween = create_tween()
+	_corruption_tween.tween_method(_set_shown_corruption,
+			_shown_corruption, GameState.corruption, 0.4)
+
+
+func _set_shown_corruption(value: int) -> void:
+	_shown_corruption = value
+	_refresh_status()
+
+
 func _narrate(text: String) -> void:
 	_narration.text = text
+	_start_crawl(0)
 
 
 func _narrate_append(text: String) -> void:
 	if _narration.text.is_empty():
-		_narration.text = text
-	else:
-		_narration.text += "\n" + text
+		_narrate(text)
+		return
+	# Continue the crawl from whatever was already revealed, so appended
+	# lines type on instead of popping.
+	var from := _narration.visible_characters
+	if from < 0:
+		from = _narration.text.length()
+	_narration.text += "\n" + text
+	_start_crawl(from)
+
+
+## Text crawl (plan task 7.1): ~60 chars/s, capped so long passages don't
+## drag. visible_characters carries the reveal; the full text is already
+## laid out underneath.
+func _start_crawl(from_chars: int) -> void:
+	if _crawl_tween != null and _crawl_tween.is_valid():
+		_crawl_tween.kill()
+	var total := _narration.text.length()
+	_narration.visible_characters = from_chars
+	if total <= from_chars:
+		_narration.visible_characters = -1
+		return
+	var duration := minf((total - from_chars) / 60.0, 0.8)
+	_crawl_tween = create_tween()
+	_crawl_tween.tween_property(_narration, "visible_characters", total, duration)
 
 
 func _refresh_status() -> void:
 	# ATK/DEF are stated because corruption trades them (plan task 5.2:
-	# "numbers stated on the status panel").
+	# "numbers stated on the status panel"). Corruption shows the ANIMATED
+	# display value — it ticks toward the truth after each gain.
 	var text := "HP %d/%d   ATK %d  DEF %d\nCorruption %d/%d" % [
 		GameState.hp, GameState.max_hp, GameState.atk, GameState.def_stat,
-		GameState.corruption, GameState.CORRUPTION_MAX,
+		_shown_corruption, GameState.CORRUPTION_MAX,
 	]
 	if data.encounter_flavor == &"intimate":
 		text += "\nSequence %d/3" % _stage
