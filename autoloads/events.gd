@@ -43,8 +43,9 @@ signal run_ended(reason: StringName)
 signal corruption_band_crossed(band: int, crossing_text: String)
 
 ## The title screen's confirm (Phase 6): Main resets GameState and starts
-## a fresh run.
-signal new_run_requested
+## a fresh run. `fixed_seed` >= 0 replays that seed's floor and rolls
+## (Phase 8, Decision 42); -1 asks for a random one.
+signal new_run_requested(fixed_seed: int)
 
 ## The end screen's confirm (Phase 6): Main returns to the title.
 signal title_requested

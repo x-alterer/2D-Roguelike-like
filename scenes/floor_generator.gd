@@ -102,7 +102,7 @@ static func _attempt(rng: RandomNumberGenerator) -> Dictionary:
 	for b in rng.randi_range(1, 2):
 		if not _place_beckoner(rng, rooms, occupied, cells, enemy_spawns):
 			# Fallback: an early room's corner. Less flavorful, never fatal.
-			var room := rooms[rng.randi_range(0, maxi(rooms.size() / 2 - 1, 0))]
+			var room := rooms[rng.randi_range(0, maxi(_half(rooms.size()) - 1, 0))]
 			enemy_spawns.append({"data": BECKONER_DATA, "cell": room.position})
 
 	# --- Hostiles: later rooms, far from the spawn. ---
@@ -112,7 +112,7 @@ static func _attempt(rng: RandomNumberGenerator) -> Dictionary:
 		var placed := false
 		for t in 30:
 			# Prefer the later half of the chain; relax if it won't fit.
-			var lo := rooms.size() / 2 if t < 15 else 1
+			var lo := _half(rooms.size()) if t < 15 else 1
 			var room := rooms[rng.randi_range(lo, rooms.size() - 1)]
 			var cell := _random_cell(room, rng)
 			var distance := absi(cell.x - entrance.x) + absi(cell.y - entrance.y)
@@ -168,21 +168,21 @@ static func _place_beckoner(
 		cells: Dictionary,
 		enemy_spawns: Array[Dictionary]) -> bool:
 	for t in 20:
-		var host := rooms[rng.randi_range(0, maxi(rooms.size() / 2 - 1, 0))]
+		var host := rooms[rng.randi_range(0, maxi(_half(rooms.size()) - 1, 0))]
 		var alcove: Rect2i
 		var bridge: Vector2i
 		match rng.randi_range(0, 3):
 			0:  # east
-				alcove = Rect2i(host.end.x + 1, host.position.y + host.size.y / 2 - 1, 3, 3)
+				alcove = Rect2i(host.end.x + 1, host.position.y + _half(host.size.y) - 1, 3, 3)
 				bridge = Vector2i(host.end.x, alcove.position.y + 1)
 			1:  # west
-				alcove = Rect2i(host.position.x - 4, host.position.y + host.size.y / 2 - 1, 3, 3)
+				alcove = Rect2i(host.position.x - 4, host.position.y + _half(host.size.y) - 1, 3, 3)
 				bridge = Vector2i(host.position.x - 1, alcove.position.y + 1)
 			2:  # south
-				alcove = Rect2i(host.position.x + host.size.x / 2 - 1, host.end.y + 1, 3, 3)
+				alcove = Rect2i(host.position.x + _half(host.size.x) - 1, host.end.y + 1, 3, 3)
 				bridge = Vector2i(alcove.position.x + 1, host.end.y)
 			_:  # north
-				alcove = Rect2i(host.position.x + host.size.x / 2 - 1, host.position.y - 4, 3, 3)
+				alcove = Rect2i(host.position.x + _half(host.size.x) - 1, host.position.y - 4, 3, 3)
 				bridge = Vector2i(alcove.position.x + 1, host.position.y - 1)
 		if alcove.position.x < 1 or alcove.position.y < 1:
 			continue
@@ -196,6 +196,12 @@ static func _place_beckoner(
 		enemy_spawns.append({"data": BECKONER_DATA, "cell": alcove.get_center()})
 		return true
 	return false
+
+
+## Integer halving without the editor's integer-division warning on
+## every centering expression.
+static func _half(n: int) -> int:
+	return n >> 1
 
 
 static func _overlaps_any(rect: Rect2i, occupied: Array[Rect2i]) -> bool:
