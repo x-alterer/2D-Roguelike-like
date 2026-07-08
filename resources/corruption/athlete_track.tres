@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="CorruptionTrack" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/corruption_track.gd" id="1_schema"]
+
+[resource]
+script = ExtResource("1_schema")
+band_thresholds = Array[int]([25, 50, 75, 100])
+stat_modifiers_per_band = Array[Dictionary]([{
+"atk": 2,
+"max_hp": -5
+}, {
+"atk": 2,
+"max_hp": -5
+}, {
+"atk": 2,
+"max_hp": -5
+}, {}])
+verb_overrides_per_band = Array[Dictionary]([{}, {
+&"Talk": &"Intimidate"
+}, {
+&"Resist": &"Overwhelm"
+}, {}])
+band_crossing_text = Array[String](["The armor is warm now. You did not notice it grow warm.", "Your voice comes out wearing the armor's edge.", "It moves with you before you decide to move.", "There is no seam left between you."])
+bad_end_text = "The armor takes her.
+
+She is still in there, the way a voice is still in an echo.
+The dream keeps her shape and wears it better than she did."

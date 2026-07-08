@@ -30,11 +30,26 @@ const CORRUPTION_MAX := 100
 ## map's entrance cell on first load (technical plan, Decision 16).
 const NO_POSITION := Vector2i(-1, -1)
 
+## Where finished runs are recorded (Phase 5, task 5.4 — the seam the Bad
+## End system and Phase 6's behavioral profile will consume).
+const RUN_HISTORY_PATH := "user://run_history.tres"
+
 var max_hp: int = START_MAX_HP
 var hp: int = START_MAX_HP
+## Never write this directly — call add_corruption(), which runs the band
+## engine (stat shifts, verb mutations, loss condition 2).
 var corruption: int = 0
 var atk: int = START_ATK
 var def_stat: int = START_DEF
+
+## The active character's corruption arc. Swapping in a different track
+## file IS how a second character gets a different flaw — no code changes
+## (plan task 5.6).
+var corruption_track: CorruptionTrack = preload("res://resources/corruption/athlete_track.tres")
+
+## True once either loss condition (or a future win) ended the run; blocks
+## double-recording when, say, Overwhelm's HP cost kills at max corruption.
+var run_over := false
 
 ## The athlete's items: an array of ItemData resources. Empty at run start;
 ## encounters grant into it (Yield boons) and consume from it (UseItem).
@@ -94,6 +109,7 @@ func reset_run() -> void:
 	roster_initialized = false
 	engaged_enemy_index = -1
 	pending_immunity_ticks = 0
+	run_over = false
 	# "Nowhere yet" — Exploration snaps the player to the floor's entrance
 	# tile when it sees this sentinel.
 	grid_position = NO_POSITION
@@ -108,3 +124,91 @@ func reset_run() -> void:
 ## run's seeded stream.
 func roll_d100() -> int:
 	return rng.randi_range(1, 100)
+
+
+## Which corruption band the athlete is in: the number of thresholds she
+## has met. With the lockdown's [25, 50, 75, 100]: 0-24 → 0, 25-49 → 1,
+## 50-74 → 2, 75-99 → 3, 100 → 4 (the end).
+func corruption_band() -> int:
+	var band := 0
+	for threshold in corruption_track.band_thresholds:
+		if corruption >= threshold:
+			band += 1
+	return band
+
+
+## The band engine (Phase 5, task 5.1). The only legal way to raise
+## corruption: applies each crossed band's stat trade, emits the crossing
+## event, and fires loss condition 2 at the final threshold. Multiple bands
+## crossed by one large gain each fire in order.
+func add_corruption(amount: int) -> void:
+	if amount <= 0 or run_over:
+		return
+	var old_band := corruption_band()
+	corruption = mini(corruption + amount, CORRUPTION_MAX)
+	var new_band := corruption_band()
+	for band in range(old_band + 1, new_band + 1):
+		_cross_band(band)
+	if corruption >= CORRUPTION_MAX and not run_over:
+		end_run(&"corruption")
+
+
+## Applies one band crossing: the stat trade (power purchased with self —
+## lockdown §5's ATK up, max HP down) and the crossing event. `band` is the
+## band being entered; the track arrays are indexed by the threshold just
+## crossed, which is band - 1 (Decision 24).
+func _cross_band(band: int) -> void:
+	var idx := band - 1
+	if idx < corruption_track.stat_modifiers_per_band.size():
+		var mods: Dictionary = corruption_track.stat_modifiers_per_band[idx]
+		atk += mods.get("atk", 0)
+		max_hp += mods.get("max_hp", 0)
+		max_hp = maxi(max_hp, 1)
+		hp = mini(hp, max_hp)
+	var text := ""
+	if idx < corruption_track.band_crossing_text.size():
+		text = corruption_track.band_crossing_text[idx]
+	Events.corruption_band_crossed.emit(band, text)
+
+
+## Every verb substitution currently in force: the merge of all reached
+## bands' overrides (Decision 24 — cumulative, so band 3 keeps band 2's
+## mutation). The encounter scene renders and dispatches through this.
+func corruption_verb_overrides() -> Dictionary:
+	var merged := {}
+	var bands_reached := mini(corruption_band(), corruption_track.verb_overrides_per_band.size())
+	for i in bands_reached:
+		merged.merge(corruption_track.verb_overrides_per_band[i], true)
+	return merged
+
+
+## Ends the run exactly once: writes the run record to disk and emits
+## run_ended. `cause` is "corruption", "death", or (Phase 6) "win".
+func end_run(cause: StringName) -> void:
+	if run_over:
+		return
+	run_over = true
+	_record_run_end(cause)
+	Events.run_ended.emit(cause)
+
+
+## Appends this run's record to user://run_history.tres (Phase 5, task
+## 5.4): who, how it ended, the corruption level, the seed (for replay
+## debugging), and the full verb history. The future Bad End system and
+## Phase 6's behavioral profile read from here.
+func _record_run_end(cause: StringName) -> void:
+	var history: RunHistory = null
+	if ResourceLoader.exists(RUN_HISTORY_PATH):
+		history = ResourceLoader.load(RUN_HISTORY_PATH) as RunHistory
+	if history == null:
+		history = RunHistory.new()
+	history.runs.append({
+		"character": "athlete",
+		"cause": cause,
+		"corruption": corruption,
+		"rng_seed": rng_seed,
+		"run_log": run_log.duplicate(true),
+	})
+	var err := ResourceSaver.save(history, RUN_HISTORY_PATH)
+	if err != OK:
+		push_error("Could not save run history (error %d)." % err)

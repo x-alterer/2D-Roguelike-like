@@ -32,5 +32,12 @@ signal encounter_resolved(result: Dictionary)
 signal player_died
 
 ## The run is over for any reason ("win", "death", "corruption"). End-screen
-## handling is Phase 6; until then Main just logs it.
+## handling is Phase 6; until then Main shows a minimal overlay.
 signal run_ended(reason: StringName)
+
+## Corruption crossed into a new band (Phase 5). Emitted by GameState once
+## per crossing — an event at the moment it happens, never a per-frame
+## check. `crossing_text` is the track's interstitial line for that band;
+## the encounter narrates it and re-renders its menu (verbs may have
+## mutated), exploration retints the athlete.
+signal corruption_band_crossed(band: int, crossing_text: String)
