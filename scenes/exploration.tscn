@@ -32,4 +32,4 @@ offset_left = 8.0
 offset_top = 4.0
 offset_right = 632.0
 offset_bottom = 26.0
-text = "EXPLORATION — arrows/WASD: move   Space: wait   E: debug encounter"
+text = "EXPLORATION — arrows/WASD: move   Space: wait"

@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="EnemyData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/enemy_data.gd" id="1_schema"]
+
+[resource]
+script = ExtResource("1_schema")
+enemy_name = "Mournful Echo"
+color = Color(0.45, 0.55, 0.75, 1)
+encounter_flavor = &"combat"
+trigger_type = &"proximity"
+verb_set = Array[StringName]([&"Fight", &"Talk", &"Flee", &"UseItem"])
+hp = 6
+atk = 3
+def_stat = 1
+flee_difficulty = 0.3
+talk_receptivity = true
+dialogue_lines = Array[String](["It flinches, but it is listening.", "\"I only wanted to be somewhere warm,\" it says.", "It steps aside and lets you pass."])
+yield_corruption_value = 0
+resist_difficulty = 0.0
+redirect_difficulty = 0.0
+redirect_options = Array[String]([])

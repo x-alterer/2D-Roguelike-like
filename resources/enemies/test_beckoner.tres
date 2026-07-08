@@ -1,6 +1,7 @@
-[gd_resource type="Resource" script_class="EnemyData" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="EnemyData" load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://resources/enemy_data.gd" id="1_schema"]
+[ext_resource type="Resource" path="res://resources/items/heal_item.tres" id="2_boon"]
 
 [resource]
 script = ExtResource("1_schema")
@@ -19,3 +20,4 @@ yield_corruption_value = 10
 resist_difficulty = 0.5
 redirect_difficulty = 0.6
 redirect_options = Array[String](["Offer a memory instead"])
+boon_on_yield = ExtResource("2_boon")

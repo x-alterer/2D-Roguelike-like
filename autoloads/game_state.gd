@@ -36,7 +36,8 @@ var corruption: int = 0
 var atk: int = START_ATK
 var def_stat: int = START_DEF
 
-## Item container. Phases 3-4 put heal items here; empty at run start.
+## The athlete's items: an array of ItemData resources. Empty at run start;
+## encounters grant into it (Yield boons) and consume from it (UseItem).
 var inventory: Array = []
 
 ## The athlete's logical grid cell. This is the truth about where she is —
@@ -55,6 +56,24 @@ var rng_seed: int = 0
 ## writes to is already part of the state contract.
 var run_log: Array = []
 
+## Exploration scene-restore data (Phase 4, task 4.2): which enemies remain
+## on the grid and where. Entries: {"data": EnemyData, "cell": Vector2i}.
+## Exploration seeds it from the map once per run, re-reads it on every
+## load, and syncs live positions into it when an encounter fires; Main
+## removes an entry when an encounter outcome kills or resolves that enemy.
+var enemy_roster: Array = []
+var roster_initialized := false
+
+## Index into enemy_roster of the enemy currently in an encounter; -1 when
+## none. Written by Exploration at trigger time, consumed by Main at
+## resolution time so the outcome lands on the right enemy.
+var engaged_enemy_index := -1
+
+## One-shot transfer armed by Main after a fled/resisted outcome; the next
+## Exploration load reads it into its tick-local immunity counter (lockdown
+## §3: "one tick of encounter immunity", technical plan Decision 8).
+var pending_immunity_ticks := 0
+
 
 func _ready() -> void:
 	reset_run()
@@ -71,6 +90,10 @@ func reset_run() -> void:
 	def_stat = START_DEF
 	inventory.clear()
 	run_log.clear()
+	enemy_roster.clear()
+	roster_initialized = false
+	engaged_enemy_index = -1
+	pending_immunity_ticks = 0
 	# "Nowhere yet" — Exploration snaps the player to the floor's entrance
 	# tile when it sees this sentinel.
 	grid_position = NO_POSITION

@@ -96,9 +96,13 @@ design; these are implementation-level only.)
    end of tick. While non-zero the trigger dispatcher skips all checks.
    Scene-local because it is exploration bookkeeping, not run state.
 9. **Talk exchange representation.** The 2–3 line exchange (lockdown §3) is
-   the enemy's `dialogue_lines` array; each Talk choice prints the next line;
-   choosing Talk with the last line already shown ends the encounter
-   peacefully. Line index is encounter-local state.
+   the enemy's `dialogue_lines` array; each Talk choice prints the next
+   line, and printing the final line completes the exchange — the encounter
+   ends peacefully on that same press (no dead extra press). While the
+   exchange is in progress the enemy does not act: the lockdown only says
+   "turn wasted, enemy acts" for the non-receptive case, and an enemy that
+   attacks mid-conversation would punish the verb the design wants viable.
+   Line index is encounter-local state.
 10. **Intimate sequence stage display.** The lockdown's 3-stage sequence is
     tracked as an integer 0–3 in the encounter scene and shown as plain text
     ("Stage 2/3") on the status panel. Reaching stage 3 resolves as forced
@@ -134,6 +138,35 @@ design; these are implementation-level only.)
     to `NO_POSITION` (-1,-1) and Exploration snaps the player to the map's
     `@` cell when it sees the sentinel. Returning from an encounter keeps
     the real position, so mid-run reloads don't teleport the player.
+17. **Opening framing lands in Phase 3, not 4.5.** Task 3.4's test replays
+    the 60-second script, which starts with "it reached you, so it acts
+    first" — impossible without the framing rule. So the encounter scene
+    implements lockdown §7's framing (player_initiated → menu first;
+    proximity/enemy_initiated → enemy acts first) as soon as it exists, and
+    Phase 4.5 verifies it receives the real trigger type rather than adding
+    the `if`.
+18. **ItemData resource.** Phase 3's UseItem needs an item type, so items
+    are data files like enemies: `ItemData { item_name, effect: StringName,
+    amount: int }` with one effect ("heal", +8 capped at max HP, lockdown
+    §3). `GameState.inventory` holds ItemData resources, and the beckoner's
+    `boon_on_yield` points at the heal item file (Decision 12).
+19. **No inventory submenu.** With exactly one item type in the PoC until
+    Phase 9, UseItem consumes the first item in inventory directly.
+    Choosing UseItem with an empty inventory is a menu-level rejection:
+    narration only, no turn consumed, the enemy does not act.
+20. **What "the enemy acts" means in an intimate encounter.** The sequence
+    advancing IS the enemy's action. Failed Resist and Redirect already
+    include their advance per lockdown §4; a failed Flee ("turn wasted,
+    enemy acts") advances the stage by one, and an enemy-first opening of
+    an intimate encounter (none in the test data) would too. Every intimate
+    failure therefore advances the sequence exactly once.
+21. **Encounter debug affordances replace the Phase 1 ones.** Escape no
+    longer exits an encounter and the H damage key is gone — the verbs are
+    now the only exit paths. Running `encounter.tscn` directly (F6, the
+    plan's standalone test mode) loads the combat test enemy, seeds one
+    heal item so UseItem is testable, and E swaps to the other test enemy
+    and restarts. The in-game debug-E path (which passes null enemy data)
+    falls back to the combat test enemy the same way.
 
 ---
 
@@ -468,6 +501,41 @@ enemy loaded when none was injected.
   caught or approach → resolve by any verb → return to the grid in a
   consistent state → repeat. Fleeing does not chain-trigger. Both encounter
   flavors fire from their respective trigger types."*
+
+---
+
+## State audit (Phase 4, task 4.4)
+
+The definitive list of what crosses a mode switch. Anything not listed
+under "carries across" must not survive one — if it turns out to matter
+after a switch, it gets promoted into GameState deliberately, not smuggled.
+
+**Carries across (lives in GameState):**
+
+- `hp`, `max_hp`, `atk`, `def_stat` — the athlete's body
+- `corruption` — the run's moral ledger
+- `inventory` — ItemData resources (granted by Yield boons, consumed by
+  UseItem)
+- `grid_position` — where the athlete stands (`NO_POSITION` until first
+  spawn)
+- `enemy_roster` + `roster_initialized` — who remains on the grid and
+  where; seeded from the map once per run, edited only by Main on outcomes
+- `engaged_enemy_index` — transfer field: set by Exploration at trigger
+  time, consumed and reset by Main at resolution time
+- `pending_immunity_ticks` — transfer field: armed by Main on fled/resisted,
+  drained into Exploration's local counter on its next load
+- `rng` + `rng_seed` — the run's one random stream
+- `run_log` — reserved; Phase 6 fills it
+
+**Must NOT carry across (scene-local, rebuilt or discarded):**
+
+- Encounter: `_stage`, `_dialogue_index`, `_verbs_chosen`, `_turns_elapsed`,
+  `_corruption_delta`, `_menu_index`, `_enemy_hp` — walking away and coming
+  back starts the encounter over by design
+- Exploration: `_immunity_ticks` (armed via the transfer field, then
+  tick-local), `_is_ticking`, `_encounter_fired`, spawn-marker arrays, the
+  actor instances and their tweens
+- Main: `_switching`, the fade rect's alpha
 
 ---
 
