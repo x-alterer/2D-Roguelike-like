@@ -23,12 +23,14 @@ extends Node2D
 
 ## Every enemy the standalone test mode can load: the 60-second script's
 ## hostile, a talk-receptive combat enemy (Talk's peaceful branch and the
-## Fight-vs-receptive corruption trigger are untestable without one), and
-## the intimate beckoner.
+## Fight-vs-receptive corruption trigger are untestable without one), the
+## intimate beckoner, and the dummy "strange" flavor that proves unknown
+## variants run without rewiring (Phase 4.5 DoD).
 const TEST_ENEMIES: Array[Resource] = [
 	preload("res://resources/enemies/test_hostile.tres"),
 	preload("res://resources/enemies/test_receptive.tres"),
 	preload("res://resources/enemies/test_beckoner.tres"),
+	preload("res://resources/enemies/test_dummy.tres"),
 ]
 const HEAL_ITEM := preload("res://resources/items/heal_item.tres")
 
@@ -81,8 +83,8 @@ func setup(enemy_data: EnemyData, p_trigger_type: StringName) -> void:
 func _ready() -> void:
 	_standalone = get_tree().current_scene == self
 	if data == null:
-		# F6 standalone run, or the exploration debug-E path (which passes
-		# null): fall back to a test enemy (Decision 21).
+		# F6 standalone run (nobody called setup): load a test enemy
+		# (Decision 21). Doubles as a safety net against a null injection.
 		data = TEST_ENEMIES[_standalone_test_index if _standalone else 0]
 		trigger_type = data.trigger_type
 		if _standalone and GameState.inventory.is_empty():
