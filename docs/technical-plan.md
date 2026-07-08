@@ -836,6 +836,94 @@ without reading code. All presentation — no rules change in this phase.
 
 ---
 
+## Phase 8 — Procedural Floor Generation
+
+**Goal:** rooms-and-corridors floors that are always completable, populated
+with trigger-type-aware placement, replayable from any seed. The hand-made
+floor stays available behind a toggle as the permanent regression level.
+
+### Task 8.1 — FloorGenerator
+
+- **Files:** `scenes/floor_generator.gd` (class_name FloorGenerator).
+- The plan's simplest-that-works algorithm: 5–8 non-overlapping rectangular
+  rooms placed randomly, connected in sequence by L-corridors. No BSP, no
+  cellular automata. The generator is a pure function of the seed: it uses
+  its OWN RandomNumberGenerator seeded with the run seed (Decision 40) and
+  returns a floor-plan dictionary — cells, entrance, exit, enemy spawns,
+  item spawns. On validation failure it warns with seed+attempt and
+  retries, up to 20 times, then falls back to the hand-made floor with an
+  error (Decision 45).
+- **Validity:** flood-fill from the entrance must reach the exit and every
+  spawn; hostiles must sit ≥8 Manhattan from the entrance; spawn cells
+  must be distinct and off the entrance/exit.
+- **Test:** the algorithm is mirrored in Python and hammered across 1000
+  seeds — zero unrecoverable failures allowed; in-editor, ten consecutive
+  seeds must produce completable floors (the DoD).
+
+### Task 8.2 — Trigger-type-aware population
+
+- Beckoners (1–2) get purpose-carved 3×3 dead-end alcoves branching off
+  rooms in the earlier half of the chain — visible, off-path, approached
+  only deliberately. Hostiles (the remainder of 3–5 total) go in
+  later main rooms. Items (1–2) come from a weighted table and land in
+  middle rooms.
+- **Test:** across seeds, beckoners are always in single-entrance alcoves;
+  hostiles never spawn next to the entrance.
+
+### Task 8.3 — Plan-driven exploration + floor items
+
+- **Files:** `scenes/exploration.gd`, `autoloads/game_state.gd`.
+- Exploration stops owning the map: it renders whatever floor plan
+  GameState holds, generating one (or parsing the hand-made ASCII map into
+  the same plan shape) on the run's first load. Enemy AND item rosters
+  seed from the plan; items render as small quads and pick up on walk-over
+  (lockdown §2 — first time it's mechanically real), appending to
+  inventory. The status line gains an item count.
+- **Test:** pick an item up, enter an encounter, flee — the item is still
+  gone from the floor and still in inventory.
+
+### Task 8.4 — Seed replay + regression toggle
+
+- **Files:** `scenes/title.gd/.tscn`, `autoloads/events.gd`,
+  `scenes/main.gd`, `project.godot`.
+- The title gains a seed box (blank = random) — `new_run_requested` now
+  carries the seed — and a T toggle between generated floors and the
+  hand-made regression floor (session-scoped flag). The end screen already
+  displays the seed; typing it back replays the floor.
+- **Test = Phase 8 DoD:** *"Ten consecutive seeds produce completable
+  floors with correct enemy-type placement. Any seed can be replayed from
+  the end-screen seed display."*
+
+### Phase 8 decisions
+
+40. **The floor plan is run state.** Generated once per run and stored in
+    GameState; every exploration load re-renders it. It cannot be
+    re-derived mid-run because the live gameplay RNG advances during play
+    — so generation uses a dedicated RNG seeded with the same run seed,
+    keeping floor and gameplay independently deterministic. The hand-made
+    floor parses into the identical plan shape, so everything downstream
+    of the plan has exactly one code path.
+41. **Regression floor is a title-screen toggle (T)**, session-scoped: it
+    survives across runs but isn't saved. Permanent per the plan — it is
+    the level where generation bugs can't hide gameplay bugs.
+42. **Seed replay is a title LineEdit.** Blank starts a random run;
+    `new_run_requested(fixed_seed)` carries -1 for random. No validation
+    UI beyond "parses as a positive integer".
+43. **The difficulty curve, interpreted for a one-floor PoC:** "more
+    beckoners early, more hostiles late" becomes placement, not floor
+    progression — beckoner alcoves branch off the earlier half of the room
+    chain, hostiles occupy the later rooms.
+44. **The item table has one entry** (heal) until Phase 9 adds
+    corruption-reduce; the table structure exists now so Phase 9 is a data
+    edit. Walk-over pickup reuses the confirm tone — the plan's five-tone
+    set has no pickup slot, and a silent pickup would violate task 7.5.
+45. **Generation failure policy:** warn (seed + attempt number), retry
+    deterministically, hard-fall-back to the hand-made floor after 20
+    attempts. The Python mirror shows attempt-1 success in ~99% of seeds,
+    so the fallback is a tripwire, not a path.
+
+---
+
 ## State audit (Phase 4, task 4.4)
 
 The definitive list of what crosses a mode switch. Anything not listed
