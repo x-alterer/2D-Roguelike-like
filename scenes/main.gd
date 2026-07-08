@@ -28,6 +28,7 @@ const EXPLORATION_SCENE := preload("res://scenes/exploration.tscn")
 ## already granted inside the encounter.
 const REMOVE_OUTCOMES: Array[StringName] = [
 	&"victory", &"talked_down", &"redirected", &"yielded", &"yielded_forced",
+	&"intimidated", &"overwhelmed",
 ]
 ## Outcomes that leave the enemy in place and grant the lockdown §3
 ## one-tick encounter immunity on return.
@@ -43,6 +44,9 @@ var _active_mode: Node = null
 var _switching := false
 
 @onready var _fade_rect: ColorRect = $FadeLayer/FadeRect
+@onready var _end_layer: CanvasLayer = $EndLayer
+@onready var _end_rect: ColorRect = $EndLayer/EndRect
+@onready var _end_label: Label = $EndLayer/EndLabel
 
 
 func _ready() -> void:
@@ -96,11 +100,16 @@ func _on_encounter_triggered(enemy_data: Resource, trigger_type: StringName) -> 
 
 ## Applies the outcome to the world, then returns to the grid (task 4.2).
 func _on_encounter_resolved(result: Dictionary) -> void:
-	if _switching:
+	if _switching or GameState.run_over:
+		# run_over: the run ended mid-encounter (corruption max) — the end
+		# overlay is already up and the tree is pausing; don't swap scenes
+		# underneath it.
 		return
 	var outcome: StringName = result.get("outcome", &"")
 	var engaged: int = GameState.engaged_enemy_index
 	GameState.engaged_enemy_index = -1
+	if engaged >= 0 and engaged < GameState.enemy_roster.size():
+		_log_encounter(GameState.enemy_roster[engaged]["data"], result)
 	if outcome in REMOVE_OUTCOMES:
 		if engaged >= 0 and engaged < GameState.enemy_roster.size():
 			GameState.enemy_roster.remove_at(engaged)
@@ -109,10 +118,44 @@ func _on_encounter_resolved(result: Dictionary) -> void:
 	exit_encounter(result)
 
 
+## Appends the plan-schema encounter record to the run log (pulled forward
+## from Phase 6 because Phase 5's run-end record consumes it, Decision 28).
+func _log_encounter(enemy_data: EnemyData, result: Dictionary) -> void:
+	GameState.run_log.append({
+		"enemy_name": enemy_data.enemy_name,
+		"encounter_flavor": enemy_data.encounter_flavor,
+		"trigger_type": enemy_data.trigger_type,
+		"verbs_chosen": result.get("verbs_chosen", []),
+		"outcome": result.get("outcome", &""),
+		"corruption_delta": result.get("corruption_delta", 0),
+		"turns_elapsed": result.get("turns_elapsed", 0),
+	})
+
+
 func _on_player_died() -> void:
-	# End screens are Phase 6; until then the signal is just acknowledged.
-	print("Main: player_died received (death screen arrives in Phase 6)")
+	# Loss condition 1. end_run records the run and re-emits through
+	# run_ended, where the overlay is chosen — one place decides visuals.
+	GameState.end_run(&"death")
 
 
 func _on_run_ended(reason: StringName) -> void:
-	print("Main: run_ended received, reason '%s' (end screens arrive in Phase 6)" % reason)
+	match reason:
+		&"corruption":
+			# Loss condition 2 gets the DISTINCT end (lockdown §6): her
+			# track's Bad End text on an armor-red field.
+			_show_end_overlay(GameState.corruption_track.bad_end_text, Color(0.22, 0.02, 0.05, 0.95))
+		&"death":
+			_show_end_overlay("She falls.\n\nThe dream closes over the place she was.",
+					Color(0.04, 0.04, 0.07, 0.95))
+		_:
+			_show_end_overlay("The run is over. (%s)" % reason, Color(0.04, 0.04, 0.07, 0.95))
+
+
+## Minimal run-over screen (Decision 27): overlay plus a paused tree. The
+## title -> run -> end -> title loop is Phase 6; until then, relaunch.
+func _show_end_overlay(text: String, tint: Color) -> void:
+	_end_rect.color = tint
+	# The restart loop is Phase 6; until then the honest instruction is F5.
+	_end_label.text = "%s\n\n(Run over — relaunch to start again.)" % text
+	_end_layer.visible = true
+	get_tree().paused = true

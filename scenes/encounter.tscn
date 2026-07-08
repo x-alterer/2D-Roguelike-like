@@ -27,14 +27,15 @@ horizontal_alignment = 1
 
 [node name="NarrationLabel" type="Label" parent="."]
 offset_left = 20.0
-offset_top = 214.0
-offset_right = 620.0
-offset_bottom = 262.0
+offset_top = 196.0
+offset_right = 460.0
+offset_bottom = 268.0
 text = ""
+autowrap_mode = 3
 
 [node name="StatusLabel" type="Label" parent="."]
 offset_left = 8.0
-offset_top = 288.0
+offset_top = 278.0
 offset_right = 240.0
 offset_bottom = 356.0
 text = "HP 20/20
@@ -42,7 +43,7 @@ Corruption 0/100"
 
 [node name="VerbMenu" type="VBoxContainer" parent="."]
 offset_left = 470.0
-offset_top = 270.0
+offset_top = 240.0
 offset_right = 632.0
 offset_bottom = 356.0
 

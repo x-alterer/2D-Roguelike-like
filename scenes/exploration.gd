@@ -133,6 +133,7 @@ func _spawn_player() -> void:
 		# spawn cell to us (technical plan, Decision 16).
 		GameState.grid_position = _entrance_cell
 	_player.place_at(GameState.grid_position)
+	_player.refresh_corruption_visual()
 
 
 ## Builds the run's enemy roster from the map markers — once per run. From
@@ -163,6 +164,14 @@ func _spawn_enemies() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if _is_ticking or _encounter_fired:
+		return
+	if event.is_action_pressed("debug_corrupt"):
+		# Test lever for the corruption arc (Decision 30): current content
+		# can't reach the bands until Phase 9's content pass.
+		GameState.add_corruption(10)
+		_player.refresh_corruption_visual()
+		_refresh_status()
+		get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed("wait"):
 		# Wait: skip the action, the world still ticks (lockdown §2).
@@ -298,7 +307,8 @@ func _is_walkable(cell: Vector2i) -> bool:
 
 
 func _refresh_status() -> void:
-	_status_label.text = "HP %d/%d   Corruption %d/%d" % [
-		GameState.hp, GameState.max_hp,
+	# ATK/DEF are stated because corruption trades them (plan task 5.2).
+	_status_label.text = "HP %d/%d   ATK %d  DEF %d   Corruption %d/%d" % [
+		GameState.hp, GameState.max_hp, GameState.atk, GameState.def_stat,
 		GameState.corruption, GameState.CORRUPTION_MAX,
 	]

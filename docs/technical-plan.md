@@ -570,6 +570,110 @@ data, and is prepared for future variants without rewiring.
 
 ---
 
+## Phase 5 — The Athlete's Corruption Arc
+
+**Goal:** the corruption number becomes the character. Bands shift stats,
+mutate verbs, and change her body; max corruption is a distinct Bad End.
+All of it defined in data a second character could reuse.
+
+### Task 5.1 — CorruptionTrack resource + band engine
+
+- **Files:** `resources/corruption_track.gd` (the plan's schema, verbatim),
+  `resources/corruption/athlete_track.tres`, `autoloads/game_state.gd`,
+  `autoloads/events.gd`.
+- Bands per lockdown §6: 0–24 / 25–49 / 50–74 / 75–99 / 100 = end, i.e.
+  thresholds `[25, 50, 75, 100]`. All corruption mutation moves into
+  `GameState.add_corruption()`: it computes bands before/after, applies each
+  crossed band's stat modifiers (lockdown §5: ATK +2, max HP −5 per
+  crossing), and emits a new bus signal
+  `corruption_band_crossed(band, crossing_text)` — an event at the moment
+  of crossing, never a per-frame check (plan task 5.1).
+- **Test:** corruption 24→25 fires the signal once and shifts stats once;
+  24→55 fires twice.
+
+### Task 5.2 — Verb mutation, data-driven
+
+- **Files:** `scenes/encounter.gd`.
+- The track's `verb_overrides_per_band` holds cumulative substitutions:
+  entering band 2 turns Talk into Intimidate, band 3 turns Resist into
+  Overwhelm (lockdown §5 / plan task 5.2). GameState merges the overrides
+  up to the current band; the encounter renders and dispatches the
+  *effective* verb name — same slot, darker meaning, never a removed
+  option. Two new resolution functions join the verb dictionary:
+  - **Intimidate:** always ends the encounter; the enemy flees the grid.
+    No corruption change in either direction ("no corruption refund").
+  - **Overwhelm:** ends the intimate encounter by force — no boon, minor
+    HP cost.
+- A band crossed mid-encounter re-renders the menu immediately (the
+  first-mutation flash is Phase 7's task; the substitution itself must
+  already be live).
+- **Test:** at corruption 50+, Talk renders as Intimidate and resolves as
+  Intimidate; at 75+, Resist renders as Overwhelm.
+
+### Task 5.3 — Presentation per band
+
+- **Files:** `actors/player.gd`, `scenes/exploration.gd`,
+  `scenes/encounter.gd`, both status labels.
+- Player rect color lerps from her yellow toward a corrupted crimson by
+  band (the palette-swap stand-in until sprites exist). Band crossings
+  append the track's `band_crossing_text` line to the encounter narration.
+  Status panels state the numbers: ATK and DEF join HP and corruption.
+- **Test:** yield repeatedly; the rect darkens, the panel's ATK climbs and
+  max HP falls at each threshold.
+
+### Task 5.4 — Bad End + RunHistory seam
+
+- **Files:** `resources/run_history.gd`, `scenes/main.gd`, `main.tscn`,
+  `autoloads/game_state.gd`.
+- Corruption 100 ends the run distinctly from HP death: Main shows a
+  full-screen overlay (the track's `bad_end_text`, red-black) and pauses
+  the tree; HP death gets its own overlay text. On either end, GameState
+  writes the run-end record — character, cause, corruption, seed, and the
+  full verb history from the run log — into `user://run_history.tres` (a
+  RunHistory resource). Build the seam, not the Bad End feature.
+- **Test:** end a run both ways; two records with different causes exist in
+  the user:// file; each contains the encounters' verbs_chosen arrays.
+
+### Phase 5 decisions
+
+24. **Band arrays align with thresholds.** `band_thresholds[i]` crossed ⇒
+    `stat_modifiers_per_band[i]` applies and
+    `verb_overrides_per_band[i]` joins the cumulative merge. Overrides
+    accumulate — at band 3 both the band-2 and band-3 mutations are live.
+25. **Intimidate and Overwhelm resolution details** (the plan gives one
+    line each; the numbers must come from somewhere): Intimidate always
+    succeeds, works regardless of talk_receptivity (power purchased with
+    self), and removes the enemy from the grid — outcome `intimidated`.
+    Overwhelm costs 2 HP, removes the enemy, grants no boon — outcome
+    `overwhelmed`; if the 2 HP is all she has, she dies (loss condition 1
+    applies — the body pays).
+26. **Corruption mutation is centralized in GameState.** The encounter no
+    longer touches `GameState.corruption` directly; it calls
+    `add_corruption()` and reacts to the band-crossed signal. Loss
+    condition 2 also emits from GameState now, not the encounter.
+27. **Minimal end overlay, not end screens.** Both loss conditions show a
+    distinct full-screen overlay in Main and pause the tree; restarting is
+    re-running the game (F5). The title → run → end → title loop is
+    Phase 6's task 1, untouched.
+28. **Run-log appending arrives with Phase 5.** The plan schedules it for
+    Phase 6, but Phase 5's run-end record consumes "the full verb history
+    from the run log", so Main appends the plan-schema encounter record at
+    resolution time now. The encounter that ends the run is not yet logged
+    — player death emits no encounter_resolved, and a corruption max
+    writes the run record the instant the threshold is crossed, before the
+    encounter can resolve. Phase 6 owns that refinement (log the in-flight
+    encounter at run end).
+29. **RunHistory format:** `user://run_history.tres`, a RunHistory resource
+    holding an array of per-run dictionaries {character, cause, corruption,
+    rng_seed, run_log}. Aggregates (verb frequencies, curves) are Phase 6.
+30. **Debug corruption key.** Phase 2's content caps reachable corruption
+    around ~19, far below band 1 — the arc is untestable in-game until
+    Phase 9's content pass. H (the retired debug_damage action, renamed
+    `debug_corrupt`) adds +10 corruption in exploration and in the
+    encounter's standalone F6 mode. Real-game encounters ignore it.
+
+---
+
 ## State audit (Phase 4, task 4.4)
 
 The definitive list of what crosses a mode switch. Anything not listed
