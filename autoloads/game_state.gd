@@ -47,9 +47,14 @@ var def_stat: int = START_DEF
 ## (plan task 5.6).
 var corruption_track: CorruptionTrack = preload("res://resources/corruption/athlete_track.tres")
 
-## True once either loss condition (or a future win) ended the run; blocks
-## double-recording when, say, Overwhelm's HP cost kills at max corruption.
+## True once a win or either loss condition ended the run; blocks
+## double-ending when, say, Overwhelm's HP cost kills at max corruption.
 var run_over := false
+## Why the run ended ("win", "death", "corruption") — set by end_run, read
+## by the end screen, consumed by record_run_end.
+var run_end_cause: StringName = &""
+## Guards the once-per-run disk write (Decision 32).
+var run_recorded := false
 
 ## The athlete's items: an array of ItemData resources. Empty at run start;
 ## encounters grant into it (Yield boons) and consume from it (UseItem).
@@ -110,6 +115,8 @@ func reset_run() -> void:
 	engaged_enemy_index = -1
 	pending_immunity_ticks = 0
 	run_over = false
+	run_end_cause = &""
+	run_recorded = false
 	# "Nowhere yet" — Exploration snaps the player to the floor's entrance
 	# tile when it sees this sentinel.
 	grid_position = NO_POSITION
@@ -182,33 +189,55 @@ func corruption_verb_overrides() -> Dictionary:
 	return merged
 
 
-## Ends the run exactly once: writes the run record to disk and emits
-## run_ended. `cause` is "corruption", "death", or (Phase 6) "win".
+## Ends the run exactly once: marks it over and announces it. `cause` is
+## "win", "death", or "corruption". The disk write is deliberately NOT here
+## — it happens later, in the end screen's _ready (record_run_end), so the
+## encounter that ended the run has time to append its own record to the
+## run log first (Decision 32).
 func end_run(cause: StringName) -> void:
 	if run_over:
 		return
 	run_over = true
-	_record_run_end(cause)
+	run_end_cause = cause
 	Events.run_ended.emit(cause)
 
 
-## Appends this run's record to user://run_history.tres (Phase 5, task
-## 5.4): who, how it ended, the corruption level, the seed (for replay
-## debugging), and the full verb history. The future Bad End system and
-## Phase 6's behavioral profile read from here.
-func _record_run_end(cause: StringName) -> void:
-	var history: RunHistory = null
-	if ResourceLoader.exists(RUN_HISTORY_PATH):
-		history = ResourceLoader.load(RUN_HISTORY_PATH) as RunHistory
-	if history == null:
-		history = RunHistory.new()
+## Appends this run's record to user://run_history.tres, once: who, how it
+## ended, corruption, the seed (for replay debugging), the full verb
+## history, and the plan's aggregates (Phase 6, task 3). The Bad End
+## system and the end screen's history block read from here.
+func record_run_end() -> void:
+	if run_recorded:
+		return
+	run_recorded = true
+	var verb_counts := {}
+	var corruption_curve: Array[int] = []
+	for entry: Dictionary in run_log:
+		corruption_curve.append(entry.get("corruption_delta", 0))
+		for verb: StringName in entry.get("verbs_chosen", []):
+			verb_counts[verb] = verb_counts.get(verb, 0) + 1
+	var history := load_run_history()
 	history.runs.append({
 		"character": "athlete",
-		"cause": cause,
+		"cause": run_end_cause,
 		"corruption": corruption,
 		"rng_seed": rng_seed,
+		"encounters": run_log.size(),
+		"verb_counts": verb_counts,
+		"corruption_curve": corruption_curve,
 		"run_log": run_log.duplicate(true),
 	})
 	var err := ResourceSaver.save(history, RUN_HISTORY_PATH)
 	if err != OK:
 		push_error("Could not save run history (error %d)." % err)
+
+
+## The RunHistory from disk, or a fresh empty one on first launch. Callers
+## must not assume the file exists.
+func load_run_history() -> RunHistory:
+	var history: RunHistory = null
+	if ResourceLoader.exists(RUN_HISTORY_PATH):
+		history = ResourceLoader.load(RUN_HISTORY_PATH) as RunHistory
+	if history == null:
+		history = RunHistory.new()
+	return history

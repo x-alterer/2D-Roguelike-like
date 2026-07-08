@@ -65,6 +65,10 @@ var _corruption_delta := 0
 ## frees this scene moments later; standalone it just sits, showing the
 ## outcome.
 var _done := false
+## True once this encounter wrote its run-log record; every exit path
+## logs, and run-ending exits can overlap normal ones (a Yield that maxes
+## corruption), so exactly-once needs a flag (Phase 6, task 6.3).
+var _logged := false
 var _standalone := false
 
 @onready var _enemy_rect: ColorRect = $EnemyRect
@@ -367,6 +371,7 @@ func _verb_overwhelm() -> void:
 	if GameState.hp <= 0:
 		_done = true
 		_narrate_append("You fall.")
+		_log_record(&"death")
 		Events.player_died.emit()
 		return
 	_end_encounter(&"overwhelmed")
@@ -393,7 +398,8 @@ func _enemy_acts() -> void:
 		# Loss condition 1 (lockdown §6). player_died replaces
 		# encounter_resolved — there is no result to resume from.
 		_done = true
-		_narrate_append("You fall. (Death screen arrives in Phase 6.)")
+		_narrate_append("You fall.")
+		_log_record(&"death")
 		Events.player_died.emit()
 
 
@@ -417,12 +423,19 @@ func _apply_corruption(amount: int) -> void:
 	_narrate_append("Corruption +%d." % amount)
 	GameState.add_corruption(amount)
 	_refresh_status()
+	if GameState.run_over and not _done:
+		# Corruption maxed mid-verb (loss condition 2). The run is already
+		# ending — freeze this encounter and log it as it stood.
+		_done = true
+		_log_record(&"corruption_end")
+		_narrate_append("The run ends here.")
 
 
 ## Every exit path funnels through here with its outcome enum, emitting the
 ## full result payload the plan's task 3.7 specifies.
 func _end_encounter(outcome: StringName) -> void:
 	_done = true
+	_log_record(outcome)
 	Events.encounter_resolved.emit({
 		"outcome": outcome,
 		"verbs_chosen": _verbs_chosen.duplicate(),
@@ -431,6 +444,25 @@ func _end_encounter(outcome: StringName) -> void:
 	})
 	if _standalone:
 		_narrate_append("[outcome: %s] E cycles to the next test enemy." % outcome)
+
+
+## Appends this encounter's plan-schema record to the run log, exactly
+## once. The encounter logs itself (rather than Main logging from the
+## result payload) so the exits Main never hears about — player death,
+## mid-encounter corruption max — still make it into the run's history.
+func _log_record(outcome: StringName) -> void:
+	if _logged:
+		return
+	_logged = true
+	GameState.run_log.append({
+		"enemy_name": data.enemy_name,
+		"encounter_flavor": data.encounter_flavor,
+		"trigger_type": trigger_type,
+		"verbs_chosen": _verbs_chosen.duplicate(),
+		"outcome": outcome,
+		"corruption_delta": _corruption_delta,
+		"turns_elapsed": _turns_elapsed,
+	})
 
 
 func _narrate(text: String) -> void:
