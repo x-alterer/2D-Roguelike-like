@@ -72,10 +72,10 @@ var _enemies: Array[EnemyActor] = []
 ## True while a tick resolves; input is ignored so a held key can't outrun
 ## the world's animations.
 var _is_ticking := false
-## Set the instant a trigger fires. Main is already replacing this scene at
-## that point, so every loop checks it and stops — nothing may act after an
-## encounter begins.
-var _encounter_fired := false
+## Set the instant this scene hands control to Main — a trigger fired or
+## the run ended on the exit tile. Main is already replacing the scene, so
+## every loop checks this and stops; nothing may act past that moment.
+var _scene_frozen := false
 ## Ticks during which no encounter can fire. Phase 4 arms this after a
 ## successful flee (design-lockdown.md §3: "one tick of encounter
 ## immunity"); the dispatcher already honors it so Phase 4 only has to set
@@ -163,7 +163,7 @@ func _spawn_enemies() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if _is_ticking or _encounter_fired:
+	if _is_ticking or _scene_frozen:
 		return
 	if event.is_action_pressed("debug_corrupt"):
 		# Test lever for the corruption arc (Decision 30): current content
@@ -213,6 +213,12 @@ func _try_player_move(step: Vector2i) -> void:
 		return
 	_player.step_to(target)
 	GameState.grid_position = target
+	if target == _exit_cell:
+		# Win condition (lockdown §6): stepping onto the exit ends the run.
+		# No tick — the world stops mattering the moment she's out.
+		_scene_frozen = true
+		GameState.end_run(&"win")
+		return
 	_run_tick()
 
 
@@ -224,12 +230,12 @@ func _run_tick() -> void:
 	_is_ticking = true
 	for enemy in _enemies:
 		_take_enemy_turn(enemy)
-		if _encounter_fired:
+		if _scene_frozen:
 			return
 	_check_triggers()
 	_update_feedback()
 	_refresh_status()
-	if _encounter_fired:
+	if _scene_frozen:
 		# Main is replacing this scene; no point unlocking input.
 		return
 	# Hold input until the step tweens land (plus a hair), so holding a key
@@ -278,7 +284,7 @@ func _check_triggers() -> void:
 ## response, so nothing may run here afterwards — hence the flag every loop
 ## checks before continuing.
 func _fire_encounter(enemy: EnemyActor) -> void:
-	_encounter_fired = true
+	_scene_frozen = true
 	# Persist live positions so the grid restores exactly as it stood
 	# (_enemies keeps roster order, so indices line up), and record who's
 	# engaged so Main can apply the outcome to the right entry.

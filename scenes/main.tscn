@@ -12,22 +12,3 @@ layer = 10
 offset_right = 640.0
 offset_bottom = 360.0
 color = Color(0, 0, 0, 1)
-
-[node name="EndLayer" type="CanvasLayer" parent="."]
-layer = 20
-visible = false
-
-[node name="EndRect" type="ColorRect" parent="EndLayer"]
-offset_right = 640.0
-offset_bottom = 360.0
-color = Color(0.04, 0.04, 0.07, 0.95)
-
-[node name="EndLabel" type="Label" parent="EndLayer"]
-offset_left = 60.0
-offset_top = 60.0
-offset_right = 580.0
-offset_bottom = 300.0
-text = ""
-horizontal_alignment = 1
-vertical_alignment = 1
-autowrap_mode = 3

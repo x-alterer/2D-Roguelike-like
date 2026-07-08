@@ -41,3 +41,10 @@ signal run_ended(reason: StringName)
 ## the encounter narrates it and re-renders its menu (verbs may have
 ## mutated), exploration retints the athlete.
 signal corruption_band_crossed(band: int, crossing_text: String)
+
+## The title screen's confirm (Phase 6): Main resets GameState and starts
+## a fresh run.
+signal new_run_requested
+
+## The end screen's confirm (Phase 6): Main returns to the title.
+signal title_requested
