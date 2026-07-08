@@ -34,6 +34,14 @@ func _ready() -> void:
 	# real textures exist (technical plan, Decision 14).
 	if data != null:
 		_rect.color = data.color
+	# Two-frame idle bob (plan task 7.2): only the visual rect moves; the
+	# actor's grid truth never does. Plain randf() desynchronizes the
+	# enemies' bobs — deliberately NOT the seeded run RNG, which is
+	# reserved for gameplay so runs replay identically from their seed.
+	var bob := create_tween().set_loops()
+	bob.tween_interval(randf() * 0.4)
+	bob.tween_property(_rect, "position:y", -1.0, 0.45).set_trans(Tween.TRANS_SINE)
+	bob.tween_property(_rect, "position:y", 0.0, 0.45).set_trans(Tween.TRANS_SINE)
 
 
 ## Where this enemy wants to move this tick. Returning a cell is a wish,

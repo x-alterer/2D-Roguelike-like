@@ -54,3 +54,19 @@ offset_top = 4.0
 offset_right = 632.0
 offset_bottom = 26.0
 text = "ENCOUNTER — up/down: select   Enter/Z: confirm"
+
+[node name="BandOverlay" type="ColorRect" parent="."]
+visible = false
+offset_right = 640.0
+offset_bottom = 360.0
+color = Color(0.28, 0.04, 0.08, 0.88)
+
+[node name="BandLabel" type="Label" parent="BandOverlay"]
+offset_left = 40.0
+offset_top = 140.0
+offset_right = 600.0
+offset_bottom = 220.0
+text = ""
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 3

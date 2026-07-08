@@ -754,6 +754,88 @@ survives restarts. Knowledge is the only meta-progression.
 
 ---
 
+## Phase 7 — Environmental Polish & Feedback
+
+**Goal:** the game *feels* like something. Inputs are acknowledged,
+corruption shifts are unmissable, a first-time player can parse events
+without reading code. All presentation — no rules change in this phase.
+
+### Task 7.1 — Sound stubs
+
+- **Files:** `assets/sfx/*.wav` (generated), `autoloads/sfx.gd`,
+  `project.godot`, triggers in `exploration.gd` / `encounter.gd`.
+- The plan's five events get single tones: move, bump, encounter start,
+  corruption gain, verb confirm. The tones are tiny generated sine WAVs
+  (enveloped so they don't click); a third autoload `Sfx` owns a small
+  round-robin AudioStreamPlayer pool and a `play(name)` API. Silence is
+  not acceptable (plan task 7.5); beeps are.
+- **Test:** every listed event makes a distinct sound; rapid steps don't
+  cut each other off.
+
+### Task 7.2 — Exploration juice
+
+- **Files:** `scenes/exploration.gd`, `actors/enemy.gd`.
+- Footstep puff: a small quad at the departed cell that fades and shrinks
+  (~0.25s), spawned on every committed player step. Enemy idle: the
+  visual rect bobs ±1px on a slow loop — the grid position never moves.
+- **Test:** walking leaves a fading trace; idle enemies visibly breathe.
+
+### Task 7.3 — Encounter juice
+
+- **Files:** `scenes/encounter.gd`, `scenes/encounter.tscn`.
+- Screen shake (±3px, 0.15s) on any HP damage, either direction. Narration
+  text crawls (~60 chars/s, capped so long lines don't drag). Corruption
+  gain ticks the displayed number up over ~0.4s instead of snapping — the
+  pause IS the moment of consequence.
+- **Test:** the 60-second script's opening strike shakes the screen and
+  crawls its line; a Yield visibly counts 0→10.
+
+### Task 7.4 — Verb mutation announcement
+
+- **Files:** `scenes/encounter.gd`, `autoloads/game_state.gd`.
+- The first time a mutated verb *renders in a menu* this run, its slot
+  flashes and briefly reads "Talk → Intimidate" before settling on the new
+  name. Announced verbs are tracked per run in GameState (the crossing may
+  happen in an encounter whose menu doesn't contain the mutated slot —
+  the announcement waits for the moment it matters, plan task 7.3 / risk 6).
+- **Test:** cross band 2 in an intimate encounter; the next combat
+  encounter's menu flashes Talk's slot.
+
+### Task 7.5 — Band-crossing interstitial
+
+- **Files:** `scenes/encounter.gd`, `scenes/encounter.tscn`.
+- Crossing a band inside an encounter raises a full-screen tinted overlay
+  with the track's crossing line: ~0.8s hold, ~0.3s fade, input gated
+  while it's up. Marks the moment without interrupting flow for long.
+- **Test:** H to 25 in standalone mode; the overlay holds, fades, play
+  resumes.
+
+### Phase 7 decisions
+
+35. **Camera follow skipped.** The hand-made floor is exactly one screen
+    (640×352 of a 640×360 viewport); a limit-clamped camera cannot move,
+    so "camera follow with slight lag" is a no-op here. Deferred to
+    Phase 8, where generated floors may exceed the screen. The movement
+    feel the camera was meant to add comes from step tweens + footstep
+    puffs.
+36. **Cheap juice over systems.** The footstep "particle" is a tweened
+    fading quad, not a particle system — same read, a tenth of the
+    config. The enemy idle bob moves only the visual rect; grid truth is
+    untouched (Architecture Decisions: "Grid truth").
+37. **A third autoload (Sfx).** Phase 1 fixed GameState + Events; sound is
+    the first genuinely cross-scene *service* since (exploration,
+    encounter, and the F6 standalone mode all need it, so it can't live in
+    Main). The Events bus stays signal-only.
+38. **Mutation announcements are render-time, run-scoped.** GameState
+    keeps the announced list (reset per run); the flash fires when the
+    mutated verb first appears in a menu, not when the band crosses —
+    "the moment it matters" is when the slot is selectable.
+39. **Interstitial lives inside the encounter scene**, not a separate
+    screen: band crossings can only happen there, and a scene swap for a
+    half-second beat would fight the fade system.
+
+---
+
 ## State audit (Phase 4, task 4.4)
 
 The definitive list of what crosses a mode switch. Anything not listed

@@ -210,8 +210,12 @@ func _try_player_move(step: Vector2i) -> void:
 		return
 	if not _is_walkable(target) or occupant != null:
 		_player.bump(step)
+		Sfx.play(&"bump")
 		return
+	var departed := _player.grid_pos
 	_player.step_to(target)
+	Sfx.play(&"move")
+	_spawn_step_puff(departed)
 	GameState.grid_position = target
 	if target == _exit_cell:
 		# Win condition (lockdown §6): stepping onto the exit ends the run.
@@ -299,6 +303,22 @@ func _enemy_at(cell: Vector2i) -> EnemyActor:
 		if enemy.grid_pos == cell:
 			return enemy
 	return null
+
+
+## A footstep trace (plan task 7.2): a small quad at the departed cell that
+## fades and shrinks. Fire-and-forget presentation; it frees itself.
+func _spawn_step_puff(cell: Vector2i) -> void:
+	var puff := ColorRect.new()
+	puff.size = Vector2(6, 6)
+	puff.position = Vector2(cell * GridActor.TILE_SIZE) + Vector2(5, 5)
+	puff.color = Color(0.9, 0.9, 1.0, 0.3)
+	_actors.add_child(puff)
+	var tween := puff.create_tween()
+	tween.set_parallel()
+	tween.tween_property(puff, "color:a", 0.0, 0.25)
+	tween.tween_property(puff, "size", Vector2(2, 2), 0.25)
+	tween.tween_property(puff, "position", puff.position + Vector2(2, 2), 0.25)
+	tween.chain().tween_callback(puff.queue_free)
 
 
 func _update_feedback() -> void:
