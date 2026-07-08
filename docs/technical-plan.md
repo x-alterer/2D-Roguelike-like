@@ -63,6 +63,9 @@ design; these are implementation-level only.)
    Phase 4.5 (Encounter Variant Routing) is a separate later phase. Phase 4's
    wiring keeps the `enter_encounter(enemy_data)` seam narrow so the router
    can be inserted in Phase 4.5 without rewiring.
+   *(Superseded after the Phases 1–4 merge: Phase 4.5 was added to scope by
+   request — see the Phase 4.5 section below. The narrow seam paid off as
+   intended: inserting the router touched only Main.)*
 2. **Godot 4.x, not 3.x.** The plan names Godot without a version. Godot 4 is
    current, and the plan's TileMap custom-data-layer approach and typed
    `Array[StringName]` exports are Godot 4 features.
@@ -501,6 +504,69 @@ enemy loaded when none was injected.
   caught or approach → resolve by any verb → return to the grid in a
   consistent state → repeat. Fleeing does not chain-trigger. Both encounter
   flavors fire from their respective trigger types."*
+
+---
+
+## Phase 4.5 — Encounter Variant Routing
+
+**Goal:** the system knows which encounter *flow* to run based on enemy
+data, and is prepared for future variants without rewiring.
+
+### Task 4.5.1 — The router
+
+- **Files:** `scenes/encounter_router.gd` (new).
+- A dedicated script (the plan's alternative to putting it in Main), used
+  only by Main. It owns one lookup table: `encounter_flavor` →
+  `PackedScene`. For the PoC both real flavors map to the same
+  `encounter.tscn`, which differentiates itself by the resource's
+  `verb_set` — but the table is the explicit decision point: *this* flavor
+  produces *this* flow. Post-PoC, a puzzle or chase encounter is one new
+  table entry pointing at a different scene, and no other system changes.
+- `build_encounter(enemy_data, trigger_type) -> Node` instantiates the
+  routed scene and injects data + trigger type via `setup()` before
+  returning it. An unknown flavor logs a content error and falls back to
+  the default encounter scene rather than crashing.
+- **Test:** combat and intimate enemies still route into working
+  encounters.
+
+### Task 4.5.2 — Main delegates to the router
+
+- **Files:** `scenes/main.gd`.
+- `enter_encounter()` shrinks to "ask the router, swap to what it returns".
+  Main no longer preloads or instantiates `encounter.tscn` itself.
+- **Test:** the full Phase 4 loop is unchanged in behavior.
+
+### Task 4.5.3 — Trigger-type framing confirmed through the router
+
+- Already implemented in Phase 3 (Decision 17); the router forwards
+  `trigger_type` untouched. The framing test is now: proximity encounter →
+  enemy strikes first; beckoner step-in → menu first — both *through* the
+  router path.
+
+### Task 4.5.4 — The dummy third flavor
+
+- **Files:** `resources/enemies/test_dummy.tres` (new), appended to the
+  encounter scene's standalone F6 test cycle.
+- A "strange" flavor entry in the router table points at the same scene; a
+  test enemy declares it. The encounter scene has no `match` on flavor
+  anywhere — only two `if flavor == "intimate"` presentation branches — so
+  an unknown flavor simply behaves like a menu-driven encounter with
+  whatever verbs its data lists. Nothing may crash; that proves new
+  variants don't rewire existing systems.
+- **Test = Phase 4.5 DoD:** *"Both encounter flavors route correctly
+  through the router. Trigger type influences opening framing. A dummy
+  third flavor value loads without errors. Neither Exploration nor
+  Encounter scenes reference the router or each other directly."*
+
+### Phase 4.5 decisions
+
+22. **Flavors stay StringNames, not a Godot enum.** The plan says "enum",
+    but a hard `enum` would put flavor names in code, defeating the
+    data-file seam. The router's Dictionary keys ARE the enum; adding a
+    flavor = adding a key. The dummy flavor is named `&"strange"`.
+23. **The router is a plain class with a static method, not an autoload.**
+    Only Main calls it, and it holds no state — an autoload would advertise
+    it to scenes that must not know it exists.
 
 ---
 

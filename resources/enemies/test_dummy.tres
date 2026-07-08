@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="EnemyData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/enemy_data.gd" id="1_schema"]
+
+[resource]
+script = ExtResource("1_schema")
+enemy_name = "Unresolved Static"
+color = Color(0.4, 0.75, 0.55, 1)
+encounter_flavor = &"strange"
+trigger_type = &"proximity"
+verb_set = Array[StringName]([&"Fight", &"Flee"])
+hp = 4
+atk = 2
+def_stat = 0
+flee_difficulty = 0.2
+talk_receptivity = false
+dialogue_lines = Array[String]([])
+yield_corruption_value = 0
+resist_difficulty = 0.0
+redirect_difficulty = 0.0
+redirect_options = Array[String]([])

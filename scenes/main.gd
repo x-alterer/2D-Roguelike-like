@@ -13,14 +13,14 @@
 ## roster entry is gone" — and Main is the only thing above both.
 ##
 ## How it connects: listens to every signal on the Events bus. Exploration
-## emitting encounter_triggered makes Main build an Encounter (injecting the
-## enemy's data via setup()); Encounter emitting encounter_resolved makes
-## Main apply the outcome and swap Exploration back in. Both swaps run
-## through a 0.3s fade. State survives only in the GameState autoload.
+## emitting encounter_triggered makes Main ask the EncounterRouter for the
+## scene that runs this enemy's flavor (Phase 4.5); Encounter emitting
+## encounter_resolved makes Main apply the outcome and swap Exploration
+## back in. Both swaps run through a 0.3s fade. State survives only in the
+## GameState autoload.
 extends Node
 
 const EXPLORATION_SCENE := preload("res://scenes/exploration.tscn")
-const ENCOUNTER_SCENE := preload("res://scenes/encounter.tscn")
 
 ## Outcomes after which the engaged enemy leaves the grid: it died, was
 ## talked or redirected down, or was yielded to (chosen or forced) — in
@@ -55,13 +55,11 @@ func _ready() -> void:
 	_swap_to(EXPLORATION_SCENE.instantiate())
 
 
-## Builds the encounter around the triggering enemy's data. setup() must
-## run before add_child so the scene's _ready sees real data instead of
-## falling back to a test enemy.
+## Asks the router which scene runs this enemy's encounter flavor and swaps
+## to it (Phase 4.5). Main no longer knows encounter.tscn exists — the
+## router's table is the only place flavors map to scenes.
 func enter_encounter(enemy_data: EnemyData, trigger_type: StringName) -> void:
-	var encounter := ENCOUNTER_SCENE.instantiate()
-	encounter.setup(enemy_data, trigger_type)
-	_swap_to(encounter)
+	_swap_to(EncounterRouter.build_encounter(enemy_data, trigger_type))
 
 
 func exit_encounter(_result: Dictionary) -> void:
