@@ -1,12 +1,14 @@
 ## Exploration — Mode 1: the grid the athlete walks.
 ##
-## What this is: the exploration scene. It builds the hand-made floor from
-## an ASCII map, owns the player actor, and validates every move attempt —
-## a keypress becomes a committed step, a bump, or (from task 2.6 on) an
-## encounter trigger, and this script is the single place that decides
-## which. The turn scheduler and trigger dispatcher (tasks 2.4/2.6) also
-## live here, per the plan: "the scheduler lives in Exploration, not in
-## GameState".
+## What this is: the exploration scene. It renders whichever floor plan
+## the run owns — FloorGenerator's rooms-and-corridors, or the hand-made
+## ASCII map parsed into the identical plan shape when the regression
+## toggle is on (Phase 8, Decision 40) — owns the player actor, and
+## validates every move attempt: a keypress becomes a committed step, a
+## bump, a walk-over pickup, the win, or an encounter trigger, and this
+## script is the single place that decides which. The turn scheduler and
+## trigger dispatcher also live here, per the plan: "the scheduler lives
+## in Exploration, not in GameState".
 ##
 ## Why movement rules are here and not on the player: rules need the whole
 ## board — walkability, occupancy, trigger types. The actors only know how
@@ -18,13 +20,14 @@
 ## Main responds by swapping in the Encounter scene, which frees this one.
 extends Node2D
 
-## The hand-made test floor (technical plan, Decision 13). One character per
-## 16px tile, 40 columns x 22 rows: '#' wall, '.' floor, '@' entrance,
-## 'X' exit, 'H' hostile spawn, 'B' beckoner spawn (all four markers sit on
-## floor tiles). Layout: entrance room left, corridor to a center room (the
-## hostile's patrol ground), corridor to the exit room right, and a dead-end
-## alcove below the entrance room where the beckoner waits — off the path,
-## so approaching it is always a deliberate choice.
+## The hand-made regression floor (technical plan, Decisions 13 and 41 —
+## kept permanently: generation bugs can never hide gameplay bugs here).
+## One character per 16px tile, 40 columns x 22 rows: '#' wall, '.' floor,
+## '@' entrance, 'X' exit, 'H' hostile spawn, 'B' beckoner spawn (all four
+## markers sit on floor tiles). Layout: entrance room left, corridor to a
+## center room (the hostile's patrol ground), corridor to the exit room
+## right, and a dead-end alcove below the entrance room where the beckoner
+## waits — off the path, so approaching it is always a deliberate choice.
 const FLOOR_MAP: Array[String] = [
 	"########################################",
 	"#..........#############################",
@@ -59,11 +62,12 @@ const ENEMY_SCENE := preload("res://actors/enemy.tscn")
 const HOSTILE_DATA := preload("res://resources/enemies/test_hostile.tres")
 const BECKONER_DATA := preload("res://resources/enemies/test_beckoner.tres")
 
-## Filled by _build_floor from the map's marker characters.
+## Read from the run's floor plan in _ready.
 var _entrance_cell := Vector2i.ZERO
 var _exit_cell := Vector2i.ZERO
-var _hostile_spawns: Array[Vector2i] = []
-var _beckoner_spawns: Array[Vector2i] = []
+
+## Floor-item visuals by cell, so a pickup can remove exactly its quad.
+var _item_nodes: Dictionary = {}
 
 ## Every living enemy on the grid, in spawn order (which is also their turn
 ## order within a tick).
@@ -89,11 +93,16 @@ var _immunity_ticks := 0
 
 
 func _ready() -> void:
-	_build_floor()
+	if GameState.floor_plan.is_empty():
+		GameState.floor_plan = _create_floor_plan()
+	_entrance_cell = GameState.floor_plan["entrance_cell"]
+	_exit_cell = GameState.floor_plan["exit_cell"]
+	_build_from_plan(GameState.floor_plan)
 	if not GameState.roster_initialized:
-		_seed_roster()
+		_seed_rosters(GameState.floor_plan)
 	_spawn_player()
 	_spawn_enemies()
+	_spawn_items()
 	# Collect the one-shot immunity grant from a fled/resisted encounter
 	# (lockdown §3). The counter itself stays scene-local bookkeeping.
 	_immunity_ticks = GameState.pending_immunity_ticks
@@ -102,29 +111,61 @@ func _ready() -> void:
 	_refresh_status()
 
 
-## Turns the ASCII map into TileMapLayer cells and records the marker
-## positions. Walkability is NOT stored here — it lives on the tileset's
-## "walkable" custom data layer, so a tile's identity and its rules stay in
-## one place (plan task 2.1).
-func _build_floor() -> void:
+## The run's floor, decided once (Decision 40): generated from the run
+## seed, unless the regression toggle asks for the hand-made map. A
+## generator failure (20 bad attempts — the Decision 45 tripwire) also
+## lands on the hand-made floor rather than stranding the player.
+func _create_floor_plan() -> Dictionary:
+	if GameState.use_handmade_floor:
+		return _handmade_plan()
+	var plan := FloorGenerator.generate(GameState.rng_seed)
+	if plan.is_empty():
+		return _handmade_plan()
+	return plan
+
+
+## Parses the ASCII map into the SAME plan shape the generator produces,
+## so everything downstream has exactly one code path (Decision 40).
+func _handmade_plan() -> Dictionary:
+	var cells := {}
+	var plan := {
+		"cells": cells,
+		"entrance_cell": Vector2i.ZERO,
+		"exit_cell": Vector2i.ZERO,
+		"enemy_spawns": [] as Array[Dictionary],
+		"item_spawns": [] as Array[Dictionary],
+	}
 	for y in FLOOR_MAP.size():
 		var row := FLOOR_MAP[y]
 		for x in row.length():
 			var cell := Vector2i(x, y)
-			var ch := row[x]
-			if ch == "#":
-				_floor.set_cell(cell, TILE_SOURCE, TILE_WALL)
-				continue
-			_floor.set_cell(cell, TILE_SOURCE, TILE_EXIT if ch == "X" else TILE_FLOOR)
-			match ch:
+			match row[x]:
+				"#":
+					continue
 				"@":
-					_entrance_cell = cell
+					plan["entrance_cell"] = cell
 				"X":
-					_exit_cell = cell
+					plan["exit_cell"] = cell
 				"H":
-					_hostile_spawns.append(cell)
+					plan["enemy_spawns"].append({"data": HOSTILE_DATA, "cell": cell})
 				"B":
-					_beckoner_spawns.append(cell)
+					plan["enemy_spawns"].append({"data": BECKONER_DATA, "cell": cell})
+			cells[cell] = true
+	return plan
+
+
+## Renders a floor plan into TileMapLayer cells. Walkability still lives on
+## the tileset's "walkable" custom data layer (plan task 2.1) — the plan
+## only says which cells are carved.
+func _build_from_plan(plan: Dictionary) -> void:
+	var cells: Dictionary = plan["cells"]
+	for y in FloorGenerator.HEIGHT:
+		for x in FloorGenerator.WIDTH:
+			var cell := Vector2i(x, y)
+			if cells.has(cell):
+				_floor.set_cell(cell, TILE_SOURCE, TILE_EXIT if cell == _exit_cell else TILE_FLOOR)
+			else:
+				_floor.set_cell(cell, TILE_SOURCE, TILE_WALL)
 
 
 func _spawn_player() -> void:
@@ -136,15 +177,16 @@ func _spawn_player() -> void:
 	_player.refresh_corruption_visual()
 
 
-## Builds the run's enemy roster from the map markers — once per run. From
-## here on GameState.enemy_roster is the truth about who's left and where;
-## this scene only renders it (task 4.2).
-func _seed_roster() -> void:
+## Builds the run's enemy and item rosters from the floor plan — once per
+## run. From here on the GameState rosters are the truth about what's left
+## and where; this scene only renders them (task 4.2 / Phase 8 task 8.3).
+func _seed_rosters(plan: Dictionary) -> void:
 	GameState.enemy_roster.clear()
-	for cell in _hostile_spawns:
-		GameState.enemy_roster.append({"data": HOSTILE_DATA, "cell": cell})
-	for cell in _beckoner_spawns:
-		GameState.enemy_roster.append({"data": BECKONER_DATA, "cell": cell})
+	for spawn: Dictionary in plan["enemy_spawns"]:
+		GameState.enemy_roster.append({"data": spawn["data"], "cell": spawn["cell"]})
+	GameState.item_roster.clear()
+	for spawn: Dictionary in plan["item_spawns"]:
+		GameState.item_roster.append({"data": spawn["data"], "cell": spawn["cell"]})
 	GameState.roster_initialized = true
 
 
@@ -160,6 +202,35 @@ func _spawn_enemies() -> void:
 		_actors.add_child(enemy)
 		enemy.place_at(entry["cell"])
 		_enemies.append(enemy)
+
+
+## Renders every item still in the roster as a small quad on its cell.
+func _spawn_items() -> void:
+	for entry: Dictionary in GameState.item_roster:
+		var marker := ColorRect.new()
+		marker.size = Vector2(8, 8)
+		marker.position = Vector2(entry["cell"] * GridActor.TILE_SIZE) + Vector2(4, 4)
+		marker.color = Color(0.55, 0.9, 0.6)
+		_actors.add_child(marker)
+		_item_nodes[entry["cell"]] = marker
+
+
+## Walk-over pickup (lockdown §2: "items pick up on walk-over"). Removes
+## the roster entry and its quad, adds the ItemData to inventory.
+func _try_pickup(cell: Vector2i) -> void:
+	for i in GameState.item_roster.size():
+		if GameState.item_roster[i]["cell"] != cell:
+			continue
+		GameState.inventory.append(GameState.item_roster[i]["data"])
+		GameState.item_roster.remove_at(i)
+		if _item_nodes.has(cell):
+			_item_nodes[cell].queue_free()
+			_item_nodes.erase(cell)
+		# The five-tone set has no pickup slot; confirm is the
+		# acknowledgment tone (Decision 44).
+		Sfx.play(&"confirm")
+		_refresh_status()
+		return
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -217,6 +288,7 @@ func _try_player_move(step: Vector2i) -> void:
 	Sfx.play(&"move")
 	_spawn_step_puff(departed)
 	GameState.grid_position = target
+	_try_pickup(target)
 	if target == _exit_cell:
 		# Win condition (lockdown §6): stepping onto the exit ends the run.
 		# No tick — the world stops mattering the moment she's out.
@@ -334,7 +406,8 @@ func _is_walkable(cell: Vector2i) -> bool:
 
 func _refresh_status() -> void:
 	# ATK/DEF are stated because corruption trades them (plan task 5.2).
-	_status_label.text = "HP %d/%d   ATK %d  DEF %d   Corruption %d/%d" % [
+	_status_label.text = "HP %d/%d   ATK %d  DEF %d   Corruption %d/%d   Items %d" % [
 		GameState.hp, GameState.max_hp, GameState.atk, GameState.def_stat,
 		GameState.corruption, GameState.CORRUPTION_MAX,
+		GameState.inventory.size(),
 	]
