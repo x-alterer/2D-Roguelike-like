@@ -94,6 +94,12 @@ var engaged_enemy_index := -1
 ## §3: "one tick of encounter immunity", technical plan Decision 8).
 var pending_immunity_ticks := 0
 
+## Verbs whose mutation has been announced this run (Phase 7, Decision 38).
+## Run-scoped because the flash must fire once per run, and the menu that
+## first shows the mutation may belong to a later encounter than the one
+## where the band crossed.
+var announced_mutations: Array[StringName] = []
+
 
 func _ready() -> void:
 	reset_run()
@@ -117,6 +123,7 @@ func reset_run() -> void:
 	run_over = false
 	run_end_cause = &""
 	run_recorded = false
+	announced_mutations.clear()
 	# "Nowhere yet" — Exploration snaps the player to the floor's entrance
 	# tile when it sees this sentinel.
 	grid_position = NO_POSITION
@@ -153,6 +160,9 @@ func add_corruption(amount: int) -> void:
 		return
 	var old_band := corruption_band()
 	corruption = mini(corruption + amount, CORRUPTION_MAX)
+	# The gain itself is one of the five feedback events (plan task 7.5) —
+	# sounded here so every source of corruption pays audibly.
+	Sfx.play(&"corruption")
 	var new_band := corruption_band()
 	for band in range(old_band + 1, new_band + 1):
 		_cross_band(band)
