@@ -271,11 +271,14 @@ static func _roll_item_table(rng: RandomNumberGenerator) -> Resource:
 
 ## 4-way flood fill over carved cells; returns the reachable set.
 static func _flood_fill(cells: Dictionary, from: Vector2i) -> Dictionary:
+	# The array literal must be typed: iterating a plain literal makes
+	# `dir` a Variant, and `current + dir` can't infer a type from that.
+	var directions: Array[Vector2i] = [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]
 	var seen := {from: true}
 	var queue: Array[Vector2i] = [from]
 	while not queue.is_empty():
 		var current: Vector2i = queue.pop_back()
-		for dir in [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]:
+		for dir in directions:
 			var next := current + dir
 			if cells.has(next) and not seen.has(next):
 				seen[next] = true
