@@ -30,17 +30,34 @@ horizontal_alignment = 1
 
 [node name="PromptLabel" type="Label" parent="."]
 offset_left = 20.0
-offset_top = 230.0
+offset_top = 218.0
 offset_right = 620.0
-offset_bottom = 252.0
+offset_bottom = 240.0
 text = "Enter/Z — begin the run"
+horizontal_alignment = 1
+
+[node name="SeedInput" type="LineEdit" parent="."]
+offset_left = 220.0
+offset_top = 248.0
+offset_right = 420.0
+offset_bottom = 276.0
+placeholder_text = "seed (blank = random)"
+alignment = 1
+
+[node name="FloorLabel" type="Label" parent="."]
+modulate = Color(1, 1, 1, 0.55)
+offset_left = 20.0
+offset_top = 288.0
+offset_right = 620.0
+offset_bottom = 310.0
+text = "T — floor: generated floor"
 horizontal_alignment = 1
 
 [node name="HistoryLabel" type="Label" parent="."]
 modulate = Color(1, 1, 1, 0.55)
 offset_left = 20.0
-offset_top = 320.0
+offset_top = 326.0
 offset_right = 620.0
-offset_bottom = 342.0
+offset_bottom = 348.0
 text = ""
 horizontal_alignment = 1

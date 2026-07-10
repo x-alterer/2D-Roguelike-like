@@ -76,13 +76,32 @@ var rng_seed: int = 0
 ## writes to is already part of the state contract.
 var run_log: Array = []
 
+## This run's floor (Phase 8, Decision 40): the plan dictionary produced by
+## FloorGenerator (or parsed from the hand-made map). Generated once per
+## run on exploration's first load and re-rendered on every load after —
+## it can't be re-derived later because the gameplay RNG advances during
+## play. Empty = not generated yet.
+var floor_plan: Dictionary = {}
+
+## Session-scoped regression switch (Decision 41): true renders the
+## hand-made ASCII floor instead of generating. Toggled on the title
+## screen; deliberately NOT reset per run — it's a testing mode, not run
+## state.
+var use_handmade_floor := false
+
 ## Exploration scene-restore data (Phase 4, task 4.2): which enemies remain
 ## on the grid and where. Entries: {"data": EnemyData, "cell": Vector2i}.
-## Exploration seeds it from the map once per run, re-reads it on every
-## load, and syncs live positions into it when an encounter fires; Main
-## removes an entry when an encounter outcome kills or resolves that enemy.
+## Exploration seeds it from the floor plan once per run, re-reads it on
+## every load, and syncs live positions into it when an encounter fires;
+## Main removes an entry when an encounter outcome kills or resolves that
+## enemy.
 var enemy_roster: Array = []
 var roster_initialized := false
+
+## Items still lying on the floor: {"data": ItemData, "cell": Vector2i}.
+## Same lifecycle as the enemy roster; exploration removes an entry on
+## walk-over pickup (Phase 8, task 8.3).
+var item_roster: Array = []
 
 ## Index into enemy_roster of the enemy currently in an encounter; -1 when
 ## none. Written by Exploration at trigger time, consumed by Main at
@@ -106,9 +125,10 @@ func _ready() -> void:
 
 
 ## Restores the locked start condition: HP 20/20, corruption 0, ATK 5, DEF 2,
-## empty inventory, fresh seed. Called once at boot and again by Phase 6's
-## "new run" flow.
-func reset_run() -> void:
+## empty inventory, fresh seed. Called at boot and by every "new run".
+## Pass a non-negative `fixed_seed` to replay that seed's floor and rolls
+## (Phase 8, Decision 42); -1 means roll a fresh one.
+func reset_run(fixed_seed: int = -1) -> void:
 	max_hp = START_MAX_HP
 	hp = max_hp
 	corruption = 0
@@ -116,7 +136,9 @@ func reset_run() -> void:
 	def_stat = START_DEF
 	inventory.clear()
 	run_log.clear()
+	floor_plan = {}
 	enemy_roster.clear()
+	item_roster.clear()
 	roster_initialized = false
 	engaged_enemy_index = -1
 	pending_immunity_ticks = 0
@@ -127,9 +149,9 @@ func reset_run() -> void:
 	# "Nowhere yet" — Exploration snaps the player to the floor's entrance
 	# tile when it sees this sentinel.
 	grid_position = NO_POSITION
-	# randi() (unseeded, OS entropy) picks the run's seed; everything after
+	# randi() (unseeded, OS entropy) picks fresh seeds; everything after
 	# this line must roll through `rng` so the run is reproducible.
-	rng_seed = randi()
+	rng_seed = fixed_seed if fixed_seed >= 0 else randi()
 	rng.seed = rng_seed
 
 

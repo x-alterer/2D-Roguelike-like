@@ -133,12 +133,12 @@ func _on_run_ended(_reason: StringName) -> void:
 	_swap_to(END_SCREEN_SCENE.instantiate())
 
 
-func _on_new_run_requested() -> void:
+func _on_new_run_requested(fixed_seed: int) -> void:
 	if _switching:
 		# A double-tapped confirm shouldn't queue a second run start.
 		return
 	# Full reset except the RunHistory file on disk (plan Phase 6 task 1).
-	GameState.reset_run()
+	GameState.reset_run(fixed_seed)
 	_swap_to(EXPLORATION_SCENE.instantiate())
 
 
