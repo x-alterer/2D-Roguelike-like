@@ -78,6 +78,10 @@ var _standalone := false
 var _shown_corruption := 0
 var _announcing: Dictionary = {}
 var _interstitial_active := false
+## True while the menu is showing the inventory instead of verbs
+## (Decision 49's submenu — UseItem with two item types needs a choice).
+## No turn is spent until an item is actually consumed.
+var _in_item_menu := false
 var _crawl_tween: Tween
 var _corruption_tween: Tween
 
@@ -160,48 +164,70 @@ func _unhandled_input(event: InputEvent) -> void:
 	if _done:
 		return
 	if event.is_action_pressed("move_up"):
-		_menu_index = wrapi(_menu_index - 1, 0, data.verb_set.size())
+		_menu_index = wrapi(_menu_index - 1, 0, _menu_slot_count())
 		_update_menu()
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("move_down"):
-		_menu_index = wrapi(_menu_index + 1, 0, data.verb_set.size())
+		_menu_index = wrapi(_menu_index + 1, 0, _menu_slot_count())
 		_update_menu()
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("confirm"):
 		get_viewport().set_input_as_handled()
 		_confirm_verb()
+	elif event.is_action_pressed("cancel") and _in_item_menu:
+		# Backing out of the inventory is free — no item, no turn.
+		get_viewport().set_input_as_handled()
+		_close_item_menu()
+		_narrate("You close your pack.")
 
 
 ## Renders exactly what the enemy's verb_set lists, in its order. No verb
 ## names appear in this scene or the .tscn — the data file is the menu.
 func _build_menu() -> void:
+	_rebuild_menu_labels(data.verb_set.size())
+
+
+## Replaces the menu's label pool with `count` fresh slots. free(), not
+## queue_free(): the inventory submenu rebuilds mid-frame, and deferred
+## frees would leave stale labels answering get_child(i).
+func _rebuild_menu_labels(count: int) -> void:
 	for child in _menu.get_children():
-		child.queue_free()
-	for verb in data.verb_set:
-		var label := Label.new()
-		label.name = String(verb)
-		_menu.add_child(label)
+		child.free()
+	for i in count:
+		_menu.add_child(Label.new())
 	_menu_index = 0
 	_update_menu()
 
 
+## How many rows the menu currently has: inventory entries in the item
+## submenu, verbs otherwise.
+func _menu_slot_count() -> int:
+	return GameState.inventory.size() if _in_item_menu else data.verb_set.size()
+
+
 func _update_menu() -> void:
-	for i in data.verb_set.size():
+	for i in _menu_slot_count():
 		var label: Label = _menu.get_child(i)
 		var selected := i == _menu_index
-		# Corruption substitutes verbs in place — same slot, darker meaning
-		# (Phase 5). The data file still lists the original name; the
-		# current band decides what actually renders and resolves.
-		var original: StringName = data.verb_set[i]
-		var shown := String(_effective_verb(original))
-		if _announcing.has(i):
-			# First render of a mutation this run: show the transformation
-			# itself, hot, until the announcement timer settles it.
-			shown = "%s → %s" % [original, shown]
-			label.modulate = Color(1.9, 1.5, 1.1)
-		else:
-			# Dimming the unselected rows is the whole highlight system.
+		var shown := ""
+		if _in_item_menu:
+			var item: ItemData = GameState.inventory[i]
+			shown = item.item_name
 			label.modulate = Color.WHITE if selected else Color(1, 1, 1, 0.55)
+		else:
+			# Corruption substitutes verbs in place — same slot, darker
+			# meaning (Phase 5). The data file still lists the original
+			# name; the current band decides what renders and resolves.
+			var original: StringName = data.verb_set[i]
+			shown = String(_effective_verb(original))
+			if _announcing.has(i):
+				# First render of a mutation this run: show the
+				# transformation itself, hot, until the timer settles it.
+				shown = "%s → %s" % [original, shown]
+				label.modulate = Color(1.9, 1.5, 1.1)
+			else:
+				# Dimming unselected rows is the whole highlight system.
+				label.modulate = Color.WHITE if selected else Color(1, 1, 1, 0.55)
 		label.text = ("> " if selected else "  ") + shown
 
 
@@ -267,6 +293,10 @@ func _show_interstitial(text: String) -> void:
 ## data file with no function here is a content error, reported loudly
 ## instead of crashing (task 3.3's test).
 func _confirm_verb() -> void:
+	if _in_item_menu:
+		Sfx.play(&"confirm")
+		_use_item_at(_menu_index)
+		return
 	var verb: StringName = _effective_verb(data.verb_set[_menu_index])
 	if not _verb_handlers.has(verb):
 		push_error("No resolution function for verb '%s' — add it to _verb_handlers." % verb)
@@ -345,10 +375,26 @@ func _verb_use_item() -> void:
 		# (Decision 19).
 		_narrate("You carry nothing.")
 		return
+	# Two item types exist since Phase 9, so the choice is real: swap the
+	# slot list to the inventory (Decision 49). The turn is spent when an
+	# item is consumed, not when the pack opens.
+	_in_item_menu = true
+	_rebuild_menu_labels(GameState.inventory.size())
+	_narrate("Use what? (X or Esc — put it away)")
+
+
+func _use_item_at(index: int) -> void:
 	_take_turn(&"UseItem")
-	var item: ItemData = GameState.inventory.pop_front()
+	var item: ItemData = GameState.inventory[index]
+	GameState.inventory.remove_at(index)
+	_close_item_menu()
 	_apply_item(item)
 	_enemy_acts()
+
+
+func _close_item_menu() -> void:
+	_in_item_menu = false
+	_rebuild_menu_labels(data.verb_set.size())
 
 
 func _apply_item(item: ItemData) -> void:
