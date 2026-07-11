@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="EnemyData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/enemy_data.gd" id="1_schema"]
+
+[resource]
+script = ExtResource("1_schema")
+enemy_name = "Thorned Warden"
+color = Color(0.36, 0.52, 0.32, 1)
+encounter_flavor = &"combat"
+trigger_type = &"proximity"
+verb_set = Array[StringName]([&"Fight", &"Talk", &"Flee", &"UseItem"])
+hp = 4
+atk = 5
+def_stat = 5
+flee_difficulty = 0.3
+talk_receptivity = true
+dialogue_lines = Array[String](["It plants itself in your path, thorns out, waiting.", "\"I keep the way. I was kept once too,\" it says.", "The thorns fold down. It lets you by."])
+yield_corruption_value = 0
+resist_difficulty = 0.0
+redirect_difficulty = 0.0
+redirect_options = Array[String]([])

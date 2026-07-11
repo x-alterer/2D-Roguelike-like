@@ -210,6 +210,31 @@ func _cross_band(band: int) -> void:
 	Events.corruption_band_crossed.emit(band, text)
 
 
+## The band engine's downward mirror (Phase 9, Decision 47): the
+## corruption-reduce item lowers the number and symmetrically reverses any
+## bands left behind — stat trades undo, and verb overrides un-mutate on
+## their own because they're computed live from the current band. Quiet by
+## design: no interstitial, no signal; the item's narration carries it.
+func remove_corruption(amount: int) -> void:
+	if amount <= 0 or run_over:
+		return
+	var old_band := corruption_band()
+	corruption = maxi(corruption - amount, 0)
+	var new_band := corruption_band()
+	for band in range(old_band, new_band, -1):
+		_uncross_band(band)
+
+
+func _uncross_band(band: int) -> void:
+	var idx := band - 1
+	if idx < corruption_track.stat_modifiers_per_band.size():
+		var mods: Dictionary = corruption_track.stat_modifiers_per_band[idx]
+		atk -= mods.get("atk", 0)
+		max_hp -= mods.get("max_hp", 0)
+		max_hp = maxi(max_hp, 1)
+		hp = mini(hp, max_hp)
+
+
 ## Every verb substitution currently in force: the merge of all reached
 ## bands' overrides (Decision 24 — cumulative, so band 3 keeps band 2's
 ## mutation). The encounter scene renders and dispatches through this.

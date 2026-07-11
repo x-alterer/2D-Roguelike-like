@@ -356,6 +356,14 @@ func _apply_item(item: ItemData) -> void:
 		&"heal":
 			GameState.hp = mini(GameState.hp + item.amount, GameState.max_hp)
 			_narrate("You use %s. HP +%d." % [item.item_name, item.amount])
+		&"cleanse":
+			# The pressure valve (Phase 9): a small step back from the
+			# edge. Bands left behind reverse (Decision 47), so verbs may
+			# quietly un-mutate on the next menu render.
+			GameState.remove_corruption(item.amount)
+			_narrate("You use %s. The armor's grip loosens. Corruption -%d." % [
+					item.item_name, item.amount])
+			_tick_corruption_display()
 		_:
 			_narrate("%s does nothing." % item.item_name)
 	_refresh_status()
