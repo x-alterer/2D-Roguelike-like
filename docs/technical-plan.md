@@ -924,6 +924,90 @@ floor stays available behind a toggle as the permanent regression level.
 
 ---
 
+## Phase 9 — Content & Playtest Pass
+
+**Goal:** enough content to test whether the loop is fun, and a structured
+look at whether it is. The build half is code/data; the playtest half —
+running the protocol and writing the findings — belongs to the designer.
+
+### Task 9.1 — Content minimums
+
+- **Files:** `resources/enemies/thorned_warden.tres`,
+  `resources/enemies/grasping_veil.tres`,
+  `resources/items/cleanse_item.tres`.
+- Completes the plan's roster: **3 combat** — talk-receptive (Mournful
+  Echo, existing), aggressive (Hulking Shadow, existing), and the
+  Fight-punisher (Thorned Warden: DEF 5 vs. player ATK 5 → 1 damage per
+  swing, 4 HP, hits for 3, talk-receptive — so Fighting it costs ~4 turns,
+  ~12 HP, and +12 corruption while Talk is free; Talk/Flee is mechanically
+  correct). **2 intimate** — the temptation (Pale Beckoner, boon for
+  Yield, existing) and the trap (Grasping Veil: `boon_on_yield` empty,
+  resist_difficulty 0.7, redirect_difficulty 0.35 — Redirect is the
+  correct play; it's also `enemy_initiated`, the roster's first ambush,
+  which per Decision 20 opens by advancing the sequence). **2 items** —
+  heal (existing) and corruption-reduce (Clear Water, −5: a pressure
+  valve, not a solution).
+
+### Task 9.2 — Corruption-reduce semantics
+
+- **Files:** `autoloads/game_state.gd`, `scenes/encounter.gd`.
+- `remove_corruption()` mirrors the band engine downward (Decision 47):
+  bands left behind reverse their stat trades, and verb overrides
+  un-mutate automatically because they're computed live from the current
+  band. Quiet by design — no interstitial, no signal; the item narrates.
+
+### Task 9.3 — Generator population tables
+
+- **Files:** `scenes/floor_generator.gd`.
+- The roamer slots draw from a weighted table (Shadow 3 / Echo 2 /
+  Warden 2 / Veil 2); alcoves stay beckoner-only. The item table gains
+  the cleanse row (heal 2 / cleanse 1).
+
+### Task 9.4 — Inventory submenu
+
+- **Files:** `scenes/encounter.gd`.
+- Decision 19 deferred the UseItem submenu until a second item type
+  existed; it now does. UseItem swaps the slot list to the inventory;
+  confirm consumes (that's when the turn is spent), cancel backs out free.
+
+### Task 9.5 — Playtest protocol + findings form
+
+- **Files:** `docs/playtest.md`.
+- The plan's six failure-state questions as a runnable protocol, plus the
+  findings form whose last section answers the only question that matters:
+  does the 60-second loop exist in the build, and is it worth 60 more
+  seconds? Filling it in is the designer's job (Decision 50) — the PoC is
+  judged by a person, not by the build.
+
+### Phase 9 decisions
+
+46. **The test_* resources ARE the roster.** Hulking Shadow, Mournful
+    Echo, and Pale Beckoner graduate from test data to content without
+    renaming — the files are referenced throughout and the names never
+    meant "fake", only "first". Unresolved Static stays a router test
+    only, out of generation.
+47. **Cleansing reverses bands symmetrically.** The alternative (number
+    drops but effects persist) needs a high-water mark and makes the
+    display lie. Downward crossings undo the stat trades; overrides
+    un-mutate live; `announced_mutations` stays — re-crossing later won't
+    re-flash. No interstitial on the way down: relief is quiet, the
+    armor's grip is loud.
+48. **The ambush seduction roams.** The Grasping Veil is intimate but
+    `enemy_initiated`, so it uses the wanderer behavior and fires by
+    stepping into the athlete — exercising the third trigger type in real
+    play for the first time. Its opening beat advances the sequence
+    (Decision 20): being caught costs the first move. That is what a trap
+    is.
+49. **Roamer weights** favor the aggressive shadow (3) over echo/warden/
+    veil (2 each) so the baseline threat stays the most common read.
+    Tuning numbers are exactly what Phase 9's playtest exists to change —
+    all of them live in data files.
+50. **The findings document is scaffolded, not written.** The self-
+    playtest is the designer's instrument; a findings file authored by the
+    implementer would judge its own work.
+
+---
+
 ## State audit (Phase 4, task 4.4)
 
 The definitive list of what crosses a mode switch. Anything not listed
