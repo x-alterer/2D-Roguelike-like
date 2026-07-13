@@ -33,15 +33,25 @@ const HEIGHT := 22
 const MIN_HOSTILE_DISTANCE := 8
 const MAX_FLOOR_ATTEMPTS := 20
 
-const HOSTILE_DATA := preload("res://resources/enemies/test_hostile.tres")
 const BECKONER_DATA := preload("res://resources/enemies/test_beckoner.tres")
-const HEAL_ITEM := preload("res://resources/items/heal_item.tres")
 
-## The plan's "small weighted table" of floor items. One entry until
-## Phase 9 adds corruption-reduce (technical plan, Decision 44) — adding
-## an item type is adding a row here.
+## Who roams the floor (Phase 9, Decision 49): the roamer slots draw from
+## this weighted table. The aggressive shadow stays the most common read;
+## the Grasping Veil is intimate but enemy_initiated, so the ambush
+## seduction hunts like a threat (Decision 48). Beckoners are not here —
+## they get their own carved alcoves.
+const ROAMER_TABLE: Array[Dictionary] = [
+	{"data": preload("res://resources/enemies/test_hostile.tres"), "weight": 3.0},
+	{"data": preload("res://resources/enemies/test_receptive.tres"), "weight": 2.0},
+	{"data": preload("res://resources/enemies/thorned_warden.tres"), "weight": 2.0},
+	{"data": preload("res://resources/enemies/grasping_veil.tres"), "weight": 2.0},
+]
+
+## The plan's "small weighted table" of floor items. Heal outnumbers the
+## corruption pressure-valve two to one (Decision 44/49).
 const ITEM_TABLE: Array[Dictionary] = [
-	{"data": HEAL_ITEM, "weight": 1.0},
+	{"data": preload("res://resources/items/heal_item.tres"), "weight": 2.0},
+	{"data": preload("res://resources/items/cleanse_item.tres"), "weight": 1.0},
 ]
 
 
@@ -105,10 +115,11 @@ static func _attempt(rng: RandomNumberGenerator) -> Dictionary:
 			var room := rooms[rng.randi_range(0, maxi(_half(rooms.size()) - 1, 0))]
 			enemy_spawns.append({"data": BECKONER_DATA, "cell": room.position})
 
-	# --- Hostiles: later rooms, far from the spawn. ---
+	# --- Roamers: later rooms, far from the spawn, drawn from the
+	# weighted table. ---
 	var beckoner_count := enemy_spawns.size()
-	var hostile_count := maxi(rng.randi_range(3, 5) - beckoner_count, 2)
-	for h in hostile_count:
+	var roamer_count := maxi(rng.randi_range(3, 5) - beckoner_count, 2)
+	for r in roamer_count:
 		var placed := false
 		for t in 30:
 			# Prefer the later half of the chain; relax if it won't fit.
@@ -120,7 +131,7 @@ static func _attempt(rng: RandomNumberGenerator) -> Dictionary:
 				continue
 			if _cell_taken(cell, entrance, exit_cell, enemy_spawns, []):
 				continue
-			enemy_spawns.append({"data": HOSTILE_DATA, "cell": cell})
+			enemy_spawns.append({"data": _roll_table(ROAMER_TABLE, rng), "cell": cell})
 			placed = true
 			break
 		if not placed:
@@ -134,7 +145,7 @@ static func _attempt(rng: RandomNumberGenerator) -> Dictionary:
 			var cell := _random_cell(room, rng)
 			if _cell_taken(cell, entrance, exit_cell, enemy_spawns, item_spawns):
 				continue
-			item_spawns.append({"data": _roll_item_table(rng), "cell": cell})
+			item_spawns.append({"data": _roll_table(ITEM_TABLE, rng), "cell": cell})
 			break
 
 	# --- Validity: everything the run needs must be reachable on foot. ---
@@ -257,16 +268,18 @@ static func _cell_taken(
 	return false
 
 
-static func _roll_item_table(rng: RandomNumberGenerator) -> Resource:
+## One weighted pick from a table of {"data": Resource, "weight": float}
+## rows. Shared by the roamer and item tables.
+static func _roll_table(table: Array[Dictionary], rng: RandomNumberGenerator) -> Resource:
 	var total := 0.0
-	for row in ITEM_TABLE:
+	for row in table:
 		total += row["weight"]
 	var roll := rng.randf() * total
-	for row in ITEM_TABLE:
+	for row in table:
 		roll -= row["weight"]
 		if roll <= 0.0:
 			return row["data"]
-	return ITEM_TABLE[ITEM_TABLE.size() - 1]["data"]
+	return table[table.size() - 1]["data"]
 
 
 ## 4-way flood fill over carved cells; returns the reachable set.
